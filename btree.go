@@ -60,35 +60,23 @@ func (inodes INodes) find(key Bytes) (bool, int) {
 	return false, idx
 }
 
-func (inodes *INodes) insert_at(idx int, inode INode) {
-	(*inodes) = append((*inodes), inode)
-	goes_on_the_back := (idx == len(*inodes))
+func insert_at[T any](sl []T, idx int, item T) []T {
+	sl = append(sl, item)
+	goes_on_the_back := (idx == len(sl))
 	if goes_on_the_back {
-		return
+		return sl
 	}
 	// Move suffix part one item forward
 	//     dst         src
-	copy((*inodes)[idx+1:], (*inodes)[idx:])
+	copy(sl[idx+1:], sl[idx:])
 	// Insert
-	(*inodes)[idx] = inode
-}
-
-func (children *Children) insert_at(idx int, child *Node) {
-	(*children) = append((*children), child)
-	goes_on_the_back := (idx == len(*children))
-	if goes_on_the_back {
-		return
-	}
-	// Move suffix part one item forward
-	//     dst         src
-	copy((*children)[idx+1:], (*children)[idx:])
-	// Insert
-	(*children)[idx] = child
+	sl[idx] = item
+	return sl
 }
 
 func (n *Node) insert_inode_and_split_if_needed(idx, max_inodes int, inode INode) (bool, INode, *Node) {
 	empty_inode := INode{}
-	n.inodes.insert_at(idx, inode)
+	n.inodes = insert_at(n.inodes, idx, inode)
 	if n.should_split(max_inodes) {
 		mid_inode, new_child := n.split_in_half()
 		return true, mid_inode, new_child
@@ -108,7 +96,7 @@ func (n *Node) insert(inode INode, max_inodes int) (bool, INode, *Node) {
 	} else {
 		was_split, mid_inode, new_child := n.children[idx].insert(inode, max_inodes)
 		if was_split {
-			n.children.insert_at(idx+1, new_child)
+			n.children = insert_at(n.children, idx+1, new_child)
 			return n.insert_inode_and_split_if_needed(idx, max_inodes, mid_inode)
 		}
 	}
