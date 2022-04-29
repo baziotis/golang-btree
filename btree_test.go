@@ -2,6 +2,7 @@ package main
 
 import (
 	"math/rand"
+	"os"
 	"testing"
 	"time"
 )
@@ -16,11 +17,17 @@ func rand_bytes(n int) Bytes {
 }
 
 func TestBTree(t *testing.T) {
+	// Remove test .db file
+	test_db_file := "bt_test.db"
+	if check_file_exists(test_db_file) {
+		err := os.Remove("bt_test.db")
+		panic_on_err(err)
+	}
 	// TODO: Check properties of tree, e.g., that all paths
 	// to leaves have the same length
 	for order := 1; order < 10; order++ {
-		bt := get_new_btree(order)
-		num_insertions := 100 * 1000
+		bt := get_new_btree(order, "bt_test.db")
+		num_insertions := 3 * 1000
 		key_value_len := 10
 		rand.Seed(time.Now().UnixNano())
 
