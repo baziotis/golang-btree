@@ -36,13 +36,13 @@ func get_sizeof_type[T any]() uintptr {
 	return ty.Size()
 }
 
-type bytes_t []byte
+type Bytes []byte
 
 type diskNodeIndex int32
 
 type iNode struct {
-	key   bytes_t
-	value bytes_t
+	key   Bytes
+	value Bytes
 }
 
 type iNodes []iNode
@@ -144,17 +144,17 @@ type BTree struct {
 
 // ------------------------------- Node -------------------------------
 
-func (a bytes_t) less(b bytes_t) bool {
+func (a Bytes) less(b Bytes) bool {
 	return bytes.Compare(a, b) == -1
 }
 
-func (a bytes_t) equal(b bytes_t) bool {
+func (a Bytes) equal(b Bytes) bool {
 	return bytes.Equal(a, b)
 }
 
 // If found, return the found index.
 // Otherwise, return the index to be inserted.
-func (inodes iNodes) find(key bytes_t) (bool, int) {
+func (inodes iNodes) find(key Bytes) (bool, int) {
 	// See: go doc sort.Search. For the following
 	// to work, items must be sorted.
 	// If we search for 4 in:
@@ -291,7 +291,7 @@ func (tree *BTree) max_items_per_node() int {
 	return tree.order * 2
 }
 
-func (tree *BTree) Insert(key, value bytes_t) {
+func (tree *BTree) Insert(key, value Bytes) {
 	root := tree.dnw.get_root_node()
 	_assert(root != nil)
 
@@ -312,7 +312,7 @@ func (tree *BTree) Close() {
 	panic_on_err(err)
 }
 
-func (tree *BTree) Find(key bytes_t) (found bool, value bytes_t) {
+func (tree *BTree) Find(key Bytes) (found bool, value Bytes) {
 	runner := tree.dnw.get_root_node()
 	for {
 		found, idx := runner.inodes.find(key)

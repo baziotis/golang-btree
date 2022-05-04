@@ -7,9 +7,9 @@ import (
 	"time"
 )
 
-func rand_bytes(n int) bytes_t {
-	var letters = bytes_t("abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ")
-	b := make(bytes_t, n)
+func rand_bytes(n int) Bytes {
+	var letters = Bytes("abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ")
+	b := make(Bytes, n)
 	for i := range b {
 		b[i] = letters[rand.Intn(len(letters))]
 	}
@@ -32,7 +32,7 @@ func TestBTree(t *testing.T) {
 		rand.Seed(time.Now().UnixNano())
 
 		verifier := make(map[string]string, num_insertions)
-		keys_saved := make([]bytes_t, num_insertions)
+		keys_saved := make([]Bytes, num_insertions)
 
 		// Random insertions
 		for i := 0; i < num_insertions; i++ {
@@ -54,7 +54,7 @@ func TestBTree(t *testing.T) {
 			const prob = 0.7
 
 			get_from_saved := rand.Float32() < prob
-			var key bytes_t
+			var key Bytes
 			if get_from_saved {
 				key = keys_saved[rand.Intn(len(keys_saved))]
 			} else {
@@ -67,7 +67,7 @@ func TestBTree(t *testing.T) {
 				t.Fatal()
 			}
 			if found_bt {
-				if !value_bt.equal(bytes_t(value_map)) {
+				if !value_bt.equal(Bytes(value_map)) {
 					t.Fatal()
 				}
 			}
