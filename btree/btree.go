@@ -1,4 +1,4 @@
-package main
+package btree
 
 import (
 	"bytes"
@@ -512,32 +512,32 @@ func get_new_disk_node_writer(path string) (file_exists bool, dnw DiskNodeWriter
 	return
 }
 
-func main() {
-	t := get_new_btree(1, "bt.db")
-	t.insert([]byte("10"), []byte("24"))
-	t.print()
-	t.insert([]byte("20"), []byte("38"))
-	t.print()
-	t.insert([]byte("30"), []byte("457"))
-	t.print()
-	t.insert([]byte("40"), []byte("7"))
-	t.print()
-	t.insert([]byte("50"), []byte("24"))
-	t.print()
-	t.insert([]byte("60"), []byte("32"))
-	t.print()
-	t.insert([]byte("70"), []byte("7"))
-	t.print()
-	t.insert([]byte("80"), []byte("7"))
-	t.print()
-	t.insert([]byte("0"), []byte("7"))
-	t.print()
-	t.insert([]byte("05"), []byte("7"))
-	t.print()
-	t.insert([]byte("35"), []byte("7"))
-	t.print()
-	t.insert([]byte("36"), []byte("7"))
-	t.print()
+// func main() {
+// 	t := get_new_btree(1, "bt.db")
+// 	t.insert([]byte("10"), []byte("24"))
+// 	t.print()
+// 	t.insert([]byte("20"), []byte("38"))
+// 	t.print()
+// 	t.insert([]byte("30"), []byte("457"))
+// 	t.print()
+// 	t.insert([]byte("40"), []byte("7"))
+// 	t.print()
+// 	t.insert([]byte("50"), []byte("24"))
+// 	t.print()
+// 	t.insert([]byte("60"), []byte("32"))
+// 	t.print()
+// 	t.insert([]byte("70"), []byte("7"))
+// 	t.print()
+// 	t.insert([]byte("80"), []byte("7"))
+// 	t.print()
+// 	t.insert([]byte("0"), []byte("7"))
+// 	t.print()
+// 	t.insert([]byte("05"), []byte("7"))
+// 	t.print()
+// 	t.insert([]byte("35"), []byte("7"))
+// 	t.print()
+// 	t.insert([]byte("36"), []byte("7"))
+// 	t.print()
 
-	t.close()
-}
+// 	t.close()
+// }
