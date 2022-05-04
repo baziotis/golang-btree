@@ -36,27 +36,27 @@ func get_sizeof_type[T any]() uintptr {
 	return ty.Size()
 }
 
-type Bytes []byte
+type bytes_t []byte
 
-type DiskNodeIndex int32
+type diskNodeIndex int32
 
-type INode struct {
-	key   Bytes
-	value Bytes
+type iNode struct {
+	key   bytes_t
+	value bytes_t
 }
 
-type INodes []INode
-type Children []DiskNodeIndex
+type iNodes []iNode
+type children_t []diskNodeIndex
 
-type Node struct {
-	inodes   INodes
-	children Children
+type node_t struct {
+	inodes   iNodes
+	children children_t
 }
 
 const MAX_KEY_LEN = 20
 const MAX_VALUE_LEN = 20
 
-type DiskKeyValue struct {
+type diskKeyValue struct {
 	Key_len   int32
 	Key       [MAX_KEY_LEN]byte
 	Value_len int32
@@ -75,11 +75,11 @@ const MAX_CHILDREN = MAX_KEY_VALUES + 1
 // modules (no, I am not kidding). We need that so that binary.Read()
 // and binary.Write() can work with them. One alternative is to read
 // each field individually but this is error prone as you might forget one.
-type DiskNode struct {
+type diskNode struct {
 	Num_key_values int32
 	Num_children   int32
-	Key_values     [MAX_KEY_VALUES]DiskKeyValue
-	Children       [MAX_CHILDREN]DiskNodeIndex
+	Key_values     [MAX_KEY_VALUES]diskKeyValue
+	Children       [MAX_CHILDREN]diskNodeIndex
 }
 
 // The structure of a file is 4 bytes (i.e., sizeof(DiskNodeIndex))
@@ -97,9 +97,9 @@ type DiskNode struct {
 // TBH, we could rewrite that by just doing a division with sizeof(DiskNode) and avoid
 // the 4 bytes but anyway. In any case, TODO: it would be good to save the order too.
 
-type DiskNodeWriter struct {
+type diskNodeWriter struct {
 	file     *os.File
-	next_idx DiskNodeIndex
+	next_idx diskNodeIndex
 }
 
 // --- Subtle Intuitions in B-Trees ---
@@ -139,22 +139,22 @@ type BTree struct {
 	// Ubiquitous B-Tree (https://dl.acm.org/doi/10.1145/356770.356776)
 	// which mentions "order" explictly.
 	order int
-	dnw   DiskNodeWriter
+	dnw   diskNodeWriter
 }
 
 // ------------------------------- Node -------------------------------
 
-func (a Bytes) less(b Bytes) bool {
+func (a bytes_t) less(b bytes_t) bool {
 	return bytes.Compare(a, b) == -1
 }
 
-func (a Bytes) equal(b Bytes) bool {
+func (a bytes_t) equal(b bytes_t) bool {
 	return bytes.Equal(a, b)
 }
 
 // If found, return the found index.
 // Otherwise, return the index to be inserted.
-func (inodes INodes) find(key Bytes) (bool, int) {
+func (inodes iNodes) find(key bytes_t) (bool, int) {
 	// See: go doc sort.Search. For the following
 	// to work, items must be sorted.
 	// If we search for 4 in:
@@ -189,8 +189,8 @@ func insert_at[T any](sl []T, idx int, item T) []T {
 	return sl
 }
 
-func (n *Node) insert_inode_and_split_if_needed(inode INode, idx int, parent *BTree, disk_node_idx DiskNodeIndex) (bool, INode, DiskNodeIndex) {
-	empty_inode := INode{}
+func (n *node_t) insert_inode_and_split_if_needed(inode iNode, idx int, parent *BTree, disk_node_idx diskNodeIndex) (bool, iNode, diskNodeIndex) {
+	empty_inode := iNode{}
 	n.inodes = insert_at(n.inodes, idx, inode)
 	if n.should_split(parent.max_items_per_node()) {
 		mid_inode, new_child := n.split_in_half(parent, disk_node_idx)
@@ -202,9 +202,9 @@ func (n *Node) insert_inode_and_split_if_needed(inode INode, idx int, parent *BT
 	return false, empty_inode, -1
 }
 
-func (n *Node) insert(inode INode, parent *BTree, disk_node_idx DiskNodeIndex) (bool, INode, DiskNodeIndex) {
+func (n *node_t) insert(inode iNode, parent *BTree, disk_node_idx diskNodeIndex) (bool, iNode, diskNodeIndex) {
 	found, idx := n.inodes.find(inode.key)
-	empty_inode := INode{}
+	empty_inode := iNode{}
 	if found {
 		return false, empty_inode, -1
 	}
@@ -212,7 +212,7 @@ func (n *Node) insert(inode INode, parent *BTree, disk_node_idx DiskNodeIndex) (
 	if n.is_leaf() {
 		return n.insert_inode_and_split_if_needed(inode, idx, parent, disk_node_idx)
 	} else {
-		child_disk_node_index := DiskNodeIndex(n.children[idx])
+		child_disk_node_index := diskNodeIndex(n.children[idx])
 		child_node := parent.dnw.get_node_from_idx(child_disk_node_index)
 		was_split, mid_inode, new_child := child_node.insert(inode, parent, child_disk_node_index)
 		if was_split {
@@ -224,24 +224,24 @@ func (n *Node) insert(inode INode, parent *BTree, disk_node_idx DiskNodeIndex) (
 	return false, empty_inode, -1
 }
 
-func (n *Node) is_leaf() bool {
+func (n *node_t) is_leaf() bool {
 	return len(n.children) == 0
 }
 
 // You should call this _after_ you have inserted.
-func (n *Node) should_split(max_inodes int) bool {
+func (n *node_t) should_split(max_inodes int) bool {
 	// It should be strictly less so that one more
 	// inode fits.
 	return len(n.inodes) == (max_inodes + 1)
 }
 
-func (n *Node) split_in_half(parent *BTree, node_idx DiskNodeIndex) (INode, DiskNodeIndex) {
+func (n *node_t) split_in_half(parent *BTree, node_idx diskNodeIndex) (iNode, diskNodeIndex) {
 	_assert(len(n.inodes)%2 == 1)
 	is_leaf := n.is_leaf()
 
 	mid_idx := len(n.inodes) / 2
 	mid_inode := n.inodes[mid_idx]
-	new_node := new(Node)
+	new_node := new(node_t)
 	new_node.inodes = append(new_node.inodes, n.inodes[mid_idx+1:]...)
 	// Truncate
 	n.inodes = n.inodes[:mid_idx]
@@ -267,7 +267,7 @@ func (n *Node) split_in_half(parent *BTree, node_idx DiskNodeIndex) (INode, Disk
 
 // ------------------------------- BTree -------------------------------
 
-func get_new_btree(order int, path string) *BTree {
+func GetNewBTree(order int, path string) *BTree {
 	if order < 1 {
 		panic("Bad order for BTree")
 	}
@@ -279,7 +279,7 @@ func get_new_btree(order int, path string) *BTree {
 	if !file_exists {
 		// Write a root because a root should always exist
 		// in the file.
-		root := new(Node)
+		root := new(node_t)
 		dnw.save_new_node(root)
 	}
 	btree.dnw = dnw
@@ -291,15 +291,15 @@ func (tree *BTree) max_items_per_node() int {
 	return tree.order * 2
 }
 
-func (tree *BTree) insert(key, value Bytes) {
+func (tree *BTree) Insert(key, value bytes_t) {
 	root := tree.dnw.get_root_node()
 	_assert(root != nil)
 
-	root_disk_node_index := DiskNodeIndex(0)
-	was_split, mid_inode, new_child := root.insert(INode{key, value}, tree, root_disk_node_index)
+	root_disk_node_index := diskNodeIndex(0)
+	was_split, mid_inode, new_child := root.insert(iNode{key, value}, tree, root_disk_node_index)
 	if was_split {
 		old_root_new_idx := tree.dnw.move_root_in_new_disk_node()
-		new_root := new(Node)
+		new_root := new(node_t)
 		new_root.inodes = append(new_root.inodes, mid_inode)
 		new_root.children = append(new_root.children, old_root_new_idx, new_child)
 		tree.dnw.overwrite_disk_node(new_root, 0)
@@ -307,12 +307,12 @@ func (tree *BTree) insert(key, value Bytes) {
 	}
 }
 
-func (tree *BTree) close() {
+func (tree *BTree) Close() {
 	err := tree.dnw.file.Close()
 	panic_on_err(err)
 }
 
-func (tree *BTree) find(key Bytes) (found bool, value Bytes) {
+func (tree *BTree) Find(key bytes_t) (found bool, value bytes_t) {
 	runner := tree.dnw.get_root_node()
 	for {
 		found, idx := runner.inodes.find(key)
@@ -329,7 +329,7 @@ func (tree *BTree) find(key Bytes) (found bool, value Bytes) {
 
 var indent_level int = 0
 
-func print_node(n *Node, parent *BTree) {
+func print_node(n *node_t, parent *BTree) {
 
 	print_indent := func() {
 		for i := 0; i < indent_level; i++ {
@@ -337,7 +337,7 @@ func print_node(n *Node, parent *BTree) {
 		}
 	}
 
-	print_child := func(child *Node) {
+	print_child := func(child *node_t) {
 		indent_level++
 		print_node(child, parent)
 		indent_level--
@@ -367,7 +367,7 @@ func print_node(n *Node, parent *BTree) {
 	}
 }
 
-func (tree *BTree) print() {
+func (tree *BTree) Print() {
 	print_node(tree.dnw.get_root_node(), tree)
 	fmt.Println("-----------------------")
 }
@@ -376,13 +376,13 @@ func (tree *BTree) print() {
 
 const START_FROM_THE_BEGINNING_OF_FILE = os.SEEK_SET
 
-func get_node_from_disk_node(dnode *DiskNode) *Node {
-	node := new(Node)
+func get_node_from_disk_node(dnode *diskNode) *node_t {
+	node := new(node_t)
 	for i := 0; i < int(dnode.Num_key_values); i++ {
 		key_value := dnode.Key_values[i]
 		key_len := key_value.Key_len
 		value_len := key_value.Value_len
-		inode := INode{key: key_value.Key[:key_len], value: key_value.Value[:value_len]}
+		inode := iNode{key: key_value.Key[:key_len], value: key_value.Value[:value_len]}
 		node.inodes = append(node.inodes, inode)
 	}
 
@@ -394,8 +394,8 @@ func get_node_from_disk_node(dnode *DiskNode) *Node {
 	return node
 }
 
-func get_disk_node_from_node(node *Node) *DiskNode {
-	dnode := new(DiskNode)
+func get_disk_node_from_node(node *node_t) *diskNode {
+	dnode := new(diskNode)
 	_assert(len(node.inodes) <= MAX_KEY_VALUES)
 	_assert(len(node.children) <= MAX_CHILDREN)
 	dnode.Num_key_values = int32(len(node.inodes))
@@ -404,7 +404,7 @@ func get_disk_node_from_node(node *Node) *DiskNode {
 	for idx, inode := range node.inodes {
 		_assert(len(inode.key) < MAX_KEY_LEN)
 		_assert(len(inode.value) < MAX_VALUE_LEN)
-		var dkv DiskKeyValue
+		var dkv diskKeyValue
 		dkv.Key_len = int32(len(inode.key))
 		dkv.Value_len = int32(len(inode.value))
 
@@ -421,26 +421,26 @@ func get_disk_node_from_node(node *Node) *DiskNode {
 	return dnode
 }
 
-func (dnw *DiskNodeWriter) get_node_from_idx(idx DiskNodeIndex) *Node {
+func (dnw *diskNodeWriter) get_node_from_idx(idx diskNodeIndex) *node_t {
 	offset := get_offset_from_idx(idx)
 	_, err := dnw.file.Seek(offset, START_FROM_THE_BEGINNING_OF_FILE)
 	panic_on_err(err)
 
-	dnode := new(DiskNode)
+	dnode := new(diskNode)
 	err = binary.Read(dnw.file, binary.LittleEndian, dnode)
 	panic_on_err(err)
 
 	return get_node_from_disk_node(dnode)
 }
 
-func (dnw *DiskNodeWriter) get_root_node() *Node {
-	idx_of_root := DiskNodeIndex(0)
+func (dnw *diskNodeWriter) get_root_node() *node_t {
+	idx_of_root := diskNodeIndex(0)
 	return dnw.get_node_from_idx(idx_of_root)
 }
 
-func get_offset_from_idx(idx DiskNodeIndex) int64 {
-	sizeof_DiskNode := int64(get_sizeof_type[DiskNode]())
-	sizeof_Num_nodes := int64(get_sizeof_type[DiskNodeIndex]())
+func get_offset_from_idx(idx diskNodeIndex) int64 {
+	sizeof_DiskNode := int64(get_sizeof_type[diskNode]())
+	sizeof_Num_nodes := int64(get_sizeof_type[diskNodeIndex]())
 	// +4 because we have bytes at the start of the file which
 	// denote the number of nodes.
 	// TODO: We should also save the order in the file.
@@ -448,7 +448,7 @@ func get_offset_from_idx(idx DiskNodeIndex) int64 {
 	return offset
 }
 
-func (dnw *DiskNodeWriter) write_node_to_disk(node *Node, idx DiskNodeIndex) {
+func (dnw *diskNodeWriter) write_node_to_disk(node *node_t, idx diskNodeIndex) {
 	// Get DiskNode
 	dnode := get_disk_node_from_node(node)
 	// Set offset
@@ -461,7 +461,7 @@ func (dnw *DiskNodeWriter) write_node_to_disk(node *Node, idx DiskNodeIndex) {
 	panic_on_err(err)
 }
 
-func (dnw *DiskNodeWriter) save_new_node(node *Node) DiskNodeIndex {
+func (dnw *diskNodeWriter) save_new_node(node *node_t) diskNodeIndex {
 	dnw.write_node_to_disk(node, dnw.next_idx)
 	node_idx := dnw.next_idx
 	dnw.next_idx++
@@ -472,7 +472,7 @@ func (dnw *DiskNodeWriter) save_new_node(node *Node) DiskNodeIndex {
 	return node_idx
 }
 
-func (dnw *DiskNodeWriter) overwrite_disk_node(node *Node, idx DiskNodeIndex) {
+func (dnw *diskNodeWriter) overwrite_disk_node(node *node_t, idx diskNodeIndex) {
 	_assert(idx < dnw.next_idx)
 	dnw.write_node_to_disk(node, idx)
 }
@@ -483,19 +483,19 @@ func (dnw *DiskNodeWriter) overwrite_disk_node(node *Node, idx DiskNodeIndex) {
 // the root of the tree.
 // So, when we update the root, we copy the old root to some other place,
 // and save the new one at 0.
-func (dnw *DiskNodeWriter) move_root_in_new_disk_node() (new_idx DiskNodeIndex) {
+func (dnw *diskNodeWriter) move_root_in_new_disk_node() (new_idx diskNodeIndex) {
 	root := dnw.get_node_from_idx(0)
 	new_idx = dnw.save_new_node(root)
 	return
 }
 
-func get_new_disk_node_writer(path string) (file_exists bool, dnw DiskNodeWriter) {
+func get_new_disk_node_writer(path string) (file_exists bool, dnw diskNodeWriter) {
 	file_exists = check_file_exists(path)
 	var permissions os.FileMode = 0666
 	file, err := os.OpenFile(path, os.O_RDWR|os.O_CREATE, permissions)
 	panic_on_err(err)
 
-	next_idx := DiskNodeIndex(0)
+	next_idx := diskNodeIndex(0)
 	if file_exists {
 		// Read the number of nodes in the file and set next_idx
 		binary.Read(file, binary.LittleEndian, &next_idx)
@@ -508,7 +508,7 @@ func get_new_disk_node_writer(path string) (file_exists bool, dnw DiskNodeWriter
 
 	// We should save in the file the number of entries.
 	// Now, we always start with an empty file.
-	dnw = DiskNodeWriter{file: file, next_idx: next_idx}
+	dnw = diskNodeWriter{file: file, next_idx: next_idx}
 	return
 }
 
