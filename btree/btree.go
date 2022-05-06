@@ -38,19 +38,24 @@ func get_sizeof_type[T any]() uintptr {
 
 type Bytes []byte
 
-type diskNodeIndex int32
+// This is used as a unique way of identifying nodes. Under the hood, for now,
+// these are disk node indices, but the node_t methods don't need to know
+// how we identify nodes and why.
+//
+// It may be better to save this inside node_t instead of passing it around.
+type nodeUniqueIdentifier int32
 
-type iNode struct {
+type keyValue struct {
 	key   Bytes
 	value Bytes
 }
 
-type iNodes []iNode
-type children_t []diskNodeIndex
+type keyValues []keyValue
+type children_t []nodeUniqueIdentifier
 
 type node_t struct {
-	inodes   iNodes
-	children children_t
+	key_values keyValues
+	children   children_t
 }
 
 const MAX_KEY_LEN = 20
@@ -81,6 +86,7 @@ type diskNode struct {
 	Key_values     [MAX_KEY_VALUES]diskKeyValue
 	Children       [MAX_CHILDREN]diskNodeIndex
 }
+type diskNodeIndex nodeUniqueIdentifier
 
 // The structure of a file is 4 bytes (i.e., sizeof(DiskNodeIndex))
 // which denote the number of nodes, and then an array of DiskNode.
@@ -118,13 +124,13 @@ type diskNodeWriter struct {
 // (b) It is not a leaf node. Then, it _must_ have at least N+1
 //     children, and so we can, and should, split the children
 //     in half too. In particular, notice that in a non-leaf node,
-//     there can't be an k-th inode without a k-th and a k+1-th child, because
-//     the only way the k-th inode occured is that one of the k first children
-//     pushed an inode upwards. If it wasn't the k-th child, then we shifted
+//     there can't be an k-th key_value without a k-th and a k+1-th child, because
+//     the only way the k-th key_value occured is that one of the k first children
+//     pushed a key_value upwards. If it wasn't the k-th child, then we shifted
 //     the children by one.
 //
 //     Thus, if a non-leaf node is maxed out, then we had at least N children, and one
-//     pushed an inode upwards, making us have N+1 children.
+//     pushed a key_value upwards, making us have N+1 children.
 
 type BTree struct {
 	// There are many conflicting definitions
@@ -154,7 +160,7 @@ func (a Bytes) equal(b Bytes) bool {
 
 // If found, return the found index.
 // Otherwise, return the index to be inserted.
-func (inodes iNodes) find(key Bytes) (bool, int) {
+func (key_values keyValues) find(key Bytes) (bool, int) {
 	// See: go doc sort.Search. For the following
 	// to work, items must be sorted.
 	// If we search for 4 in:
@@ -166,10 +172,10 @@ func (inodes iNodes) find(key Bytes) (bool, int) {
 	// So, if the item does not exist, it'll return
 	// the index of the next larger number. If it exists,
 	// it'll return the index right after it. See `if`s below.
-	idx := sort.Search(len(inodes), func(i int) bool {
-		return key.less(inodes[i].key)
+	idx := sort.Search(len(key_values), func(i int) bool {
+		return key.less(key_values[i].key)
 	})
-	if idx > 0 && inodes[idx-1].key.equal(key) {
+	if idx > 0 && key_values[idx-1].key.equal(key) {
 		return true, idx - 1
 	}
 	return false, idx
@@ -189,39 +195,52 @@ func insert_at[T any](sl []T, idx int, item T) []T {
 	return sl
 }
 
-func (n *node_t) insert_inode_and_split_if_needed(inode iNode, idx int, parent *BTree, disk_node_idx diskNodeIndex) (bool, iNode, diskNodeIndex) {
-	empty_inode := iNode{}
-	n.inodes = insert_at(n.inodes, idx, inode)
-	if n.should_split(parent.max_items_per_node()) {
-		mid_inode, new_child := n.split_in_half(parent, disk_node_idx)
-		return true, mid_inode, new_child
-	} else {
-		// Overwrite on disk
-		parent.dnw.overwrite_disk_node(n, disk_node_idx)
-	}
-	return false, empty_inode, -1
+func delete_at[T any](sl []T, idx int) []T {
+	last_idx := len(sl) - 1
+	// Swap the last item with the one to delete
+	sl[last_idx], sl[idx] = sl[idx], sl[last_idx]
+	// Shrink the slice by one
+	// TODO: It seems that Go doesn't really have a way to shrink a slice
+	// and free the surplus memory. The closest thing is to allocate
+	// a new slice and copy the elements into it, but why complicate
+	// the code. This is Go after all...
+	sl = sl[:last_idx]
+	return sl
 }
 
-func (n *node_t) insert(inode iNode, parent *BTree, disk_node_idx diskNodeIndex) (bool, iNode, diskNodeIndex) {
-	found, idx := n.inodes.find(inode.key)
-	empty_inode := iNode{}
+func (n *node_t) insert_key_value_and_split_if_needed(key_value keyValue, idx int, parent_tree *BTree, disk_node_idx nodeUniqueIdentifier) (bool, keyValue, nodeUniqueIdentifier) {
+	empty_key_value := keyValue{}
+	n.key_values = insert_at(n.key_values, idx, key_value)
+	if n.should_split(parent_tree.max_items_per_node()) {
+		mid_key_value, new_child := n.split_in_half(parent_tree, disk_node_idx)
+		return true, mid_key_value, new_child
+	} else {
+		// Overwrite on disk
+		parent_tree.overwrite_node(n, disk_node_idx)
+	}
+	return false, empty_key_value, -1
+}
+
+func (n *node_t) insert(key_value keyValue, parent_tree *BTree, disk_node_idx nodeUniqueIdentifier) (bool, keyValue, nodeUniqueIdentifier) {
+	found, idx := n.key_values.find(key_value.key)
+	empty_key_value := keyValue{}
 	if found {
-		return false, empty_inode, -1
+		return false, empty_key_value, -1
 	}
 
 	if n.is_leaf() {
-		return n.insert_inode_and_split_if_needed(inode, idx, parent, disk_node_idx)
+		return n.insert_key_value_and_split_if_needed(key_value, idx, parent_tree, disk_node_idx)
 	} else {
-		child_disk_node_index := diskNodeIndex(n.children[idx])
-		child_node := parent.dnw.get_node_from_idx(child_disk_node_index)
-		was_split, mid_inode, new_child := child_node.insert(inode, parent, child_disk_node_index)
+		child_disk_node_index := nodeUniqueIdentifier(n.children[idx])
+		child_node := parent_tree.get_node_from_id(child_disk_node_index)
+		was_split, mid_key_value, new_child := child_node.insert(key_value, parent_tree, child_disk_node_index)
 		if was_split {
 			_assert(new_child != -1)
 			n.children = insert_at(n.children, idx+1, new_child)
-			return n.insert_inode_and_split_if_needed(mid_inode, idx, parent, disk_node_idx)
+			return n.insert_key_value_and_split_if_needed(mid_key_value, idx, parent_tree, disk_node_idx)
 		}
 	}
-	return false, empty_inode, -1
+	return false, empty_key_value, -1
 }
 
 func (n *node_t) is_leaf() bool {
@@ -229,40 +248,53 @@ func (n *node_t) is_leaf() bool {
 }
 
 // You should call this _after_ you have inserted.
-func (n *node_t) should_split(max_inodes int) bool {
+func (n *node_t) should_split(max_key_values int) bool {
 	// It should be strictly less so that one more
-	// inode fits.
-	return len(n.inodes) == (max_inodes + 1)
+	// key_value fits.
+	return len(n.key_values) == (max_key_values + 1)
 }
 
-func (n *node_t) split_in_half(parent *BTree, node_idx diskNodeIndex) (iNode, diskNodeIndex) {
-	_assert(len(n.inodes)%2 == 1)
+func (n *node_t) split_in_half(parent_tree *BTree, node_idx nodeUniqueIdentifier) (keyValue, nodeUniqueIdentifier) {
+	_assert(len(n.key_values)%2 == 1)
 	is_leaf := n.is_leaf()
 
-	mid_idx := len(n.inodes) / 2
-	mid_inode := n.inodes[mid_idx]
+	mid_idx := len(n.key_values) / 2
+	mid_key_value := n.key_values[mid_idx]
 	new_node := new(node_t)
-	new_node.inodes = append(new_node.inodes, n.inodes[mid_idx+1:]...)
+	new_node.key_values = append(new_node.key_values, n.key_values[mid_idx+1:]...)
 	// Truncate
-	n.inodes = n.inodes[:mid_idx]
+	n.key_values = n.key_values[:mid_idx]
 
 	// Move and truncate children too. But this is a subtle point.
 	// Look at the intuition notes.
 	if !is_leaf {
 		// The first `mid_idx` children stay in `n` and the rest
 		// go to `new_node`. All the `mid_idx` children are smaller
-		// than `mid_inode`, and the rest are bigger. `mid_node` will
-		// have as children `n` (on the left) and `new_inode`.
+		// than `mid_key_value`, and the rest are bigger. `mid_node` will
+		// have as children `n` (on the left) and `new_key_value`.
 		new_node.children = append(new_node.children, n.children[mid_idx+1:]...)
 		n.children = n.children[:mid_idx+1]
 	}
 
 	// Overwrite the old node
-	parent.dnw.overwrite_disk_node(n, node_idx)
+	parent_tree.overwrite_node(n, node_idx)
 	// Save new node to disk
-	new_node_disk_idx := parent.dnw.save_new_node(new_node)
+	new_node_disk_idx := parent_tree.save_new_node(new_node)
 
-	return mid_inode, new_node_disk_idx
+	return mid_key_value, new_node_disk_idx
+}
+
+// Make sure that a node has at least min number of key_values and at most max.
+// You should not run this on the root.
+func check_node_invariants(n *node_t, parent_tree *BTree) bool {
+	num_key_values := len(n.key_values)
+	at_least_min := num_key_values >= parent_tree.min_items_per_node()
+	at_most_max := num_key_values <= parent_tree.max_items_per_node()
+	if !at_least_min || !at_most_max {
+		fmt.Println(n.is_leaf(), num_key_values, parent_tree.order)
+		return false
+	}
+	return true
 }
 
 // ------------------------------- BTree -------------------------------
@@ -291,17 +323,23 @@ func (tree *BTree) max_items_per_node() int {
 	return tree.order * 2
 }
 
+func (tree *BTree) min_items_per_node() int {
+	return tree.order
+}
+
 func (tree *BTree) Insert(key, value Bytes) {
 	root := tree.dnw.get_root_node()
 	_assert(root != nil)
 
-	root_disk_node_index := diskNodeIndex(0)
-	was_split, mid_inode, new_child := root.insert(iNode{key, value}, tree, root_disk_node_index)
+	// TODO: We may want to save the disk node index at the node,
+	// and not carrying it around.
+	root_disk_node_index := nodeUniqueIdentifier(0)
+	was_split, mid_key_value, new_child := root.insert(keyValue{key, value}, tree, root_disk_node_index)
 	if was_split {
-		old_root_new_idx := tree.dnw.move_root_in_new_disk_node()
+		old_root_new_id := tree.move_root_to_new_node()
 		new_root := new(node_t)
-		new_root.inodes = append(new_root.inodes, mid_inode)
-		new_root.children = append(new_root.children, old_root_new_idx, new_child)
+		new_root.key_values = append(new_root.key_values, mid_key_value)
+		new_root.children = append(new_root.children, old_root_new_id, new_child)
 		tree.dnw.overwrite_disk_node(new_root, 0)
 		// tree.root = new_root
 	}
@@ -315,21 +353,24 @@ func (tree *BTree) Close() {
 func (tree *BTree) Find(key Bytes) (found bool, value Bytes) {
 	runner := tree.dnw.get_root_node()
 	for {
-		found, idx := runner.inodes.find(key)
+		found, idx := runner.key_values.find(key)
 		if found {
-			return true, runner.inodes[idx].value
+			return true, runner.key_values[idx].value
 		}
 		if runner.is_leaf() {
 			return false, nil
 		}
-		runner = tree.dnw.get_node_from_idx(runner.children[idx])
+		runner = tree.get_node_from_id(runner.children[idx])
 		_assert(runner != nil)
 	}
 }
 
 var indent_level int = 0
 
-func print_node(n *node_t, parent *BTree) {
+func print_node(n *node_t, parent_tree *BTree) {
+	// We may be able to use Traverse() instead
+	// rewriting the traverse code but who cares...
+	// We'd need to pass the current level of the tree too.
 
 	print_indent := func() {
 		for i := 0; i < indent_level; i++ {
@@ -339,30 +380,22 @@ func print_node(n *node_t, parent *BTree) {
 
 	print_child := func(child *node_t) {
 		indent_level++
-		print_node(child, parent)
+		print_node(child, parent_tree)
 		indent_level--
 	}
-	// There is the possibility that a node has no
-	// inodes. For example, if the order is 1, then
-	// when we split a node in "half", we're left
-	// with 1 elements on the left half, 1 middle element
-	// and no right elements. So, the right node is empty.
-	// It would be ugly to check this here, as we need to know
-	// if somebody called us (and we need to set this argument
-	// appropriately in the loop below that iterates children)
 	_assert(n != nil)
 	is_leaf := n.is_leaf()
-	for idx, inode := range n.inodes {
+	for idx, key_value := range n.key_values {
 		if !is_leaf {
-			child := parent.dnw.get_node_from_idx(n.children[idx])
+			child := parent_tree.get_node_from_id(n.children[idx])
 			print_child(child)
 		}
 		print_indent()
-		fmt.Print("{", string(inode.key), ", ", string(inode.value), "}")
+		fmt.Print("{", string(key_value.key), ", ", string(key_value.value), "}")
 		fmt.Println()
 	}
 	if !is_leaf {
-		last_child_node := parent.dnw.get_node_from_idx(n.children[len(n.children)-1])
+		last_child_node := parent_tree.get_node_from_id(n.children[len(n.children)-1])
 		print_child(last_child_node)
 	}
 }
@@ -372,23 +405,70 @@ func (tree *BTree) Print() {
 	fmt.Println("-----------------------")
 }
 
-// ------------------------------- DiskNodeWriter -------------------------------
+func (tree *BTree) Traverse(f func(*node_t, *BTree)) {
+	root := tree.dnw.get_root_node()
+	var traverse_node func(n *node_t)
 
-const START_FROM_THE_BEGINNING_OF_FILE = os.SEEK_SET
+	traverse_node = func(n *node_t) {
+		_assert(n != nil)
+		// Apply the caller's function
+		f(n, tree)
+		is_leaf := n.is_leaf()
+		for _, child_id := range n.children {
+			if !is_leaf {
+				child := tree.get_node_from_id(child_id)
+				traverse_node(child)
+			}
+		}
+	}
+
+	traverse_node(root)
+}
+
+/* The following are a thin layer over DiskNodeWriter. The idea is
+that node_t that uses BTree to save nodes, does not need to know where
+we save them */
+
+func (tree *BTree) overwrite_node(n *node_t, id nodeUniqueIdentifier) {
+	overwriting_root := (id == 0)
+	if !overwriting_root {
+		_assert(check_node_invariants(n, tree))
+	}
+	tree.dnw.overwrite_disk_node(n, diskNodeIndex(id))
+}
+
+func (tree *BTree) save_new_node(n *node_t) nodeUniqueIdentifier {
+	id := nodeUniqueIdentifier(tree.dnw.save_new_node(n))
+	wrote_root := (id == 0)
+	if !wrote_root {
+		_assert(check_node_invariants(n, tree))
+	}
+	return id
+}
+
+func (tree *BTree) get_node_from_id(id nodeUniqueIdentifier) *node_t {
+	n := tree.dnw.get_node_from_idx(diskNodeIndex(id))
+	_assert(check_node_invariants(n, tree))
+	return n
+}
+
+func (tree *BTree) move_root_to_new_node() nodeUniqueIdentifier {
+	return nodeUniqueIdentifier(tree.dnw.move_root_in_new_disk_node())
+}
 
 func get_node_from_disk_node(dnode *diskNode) *node_t {
 	node := new(node_t)
 	for i := 0; i < int(dnode.Num_key_values); i++ {
-		key_value := dnode.Key_values[i]
-		key_len := key_value.Key_len
-		value_len := key_value.Value_len
-		inode := iNode{key: key_value.Key[:key_len], value: key_value.Value[:value_len]}
-		node.inodes = append(node.inodes, inode)
+		dnode_key_value := dnode.Key_values[i]
+		key_len := dnode_key_value.Key_len
+		value_len := dnode_key_value.Value_len
+		node_key_value := keyValue{key: dnode_key_value.Key[:key_len], value: dnode_key_value.Value[:value_len]}
+		node.key_values = append(node.key_values, node_key_value)
 	}
 
 	for i := 0; i < int(dnode.Num_children); i++ {
 		child_idx := dnode.Children[i]
-		node.children = append(node.children, child_idx)
+		node.children = append(node.children, nodeUniqueIdentifier(child_idx))
 	}
 
 	return node
@@ -396,30 +476,34 @@ func get_node_from_disk_node(dnode *diskNode) *node_t {
 
 func get_disk_node_from_node(node *node_t) *diskNode {
 	dnode := new(diskNode)
-	_assert(len(node.inodes) <= MAX_KEY_VALUES)
+	_assert(len(node.key_values) <= MAX_KEY_VALUES)
 	_assert(len(node.children) <= MAX_CHILDREN)
-	dnode.Num_key_values = int32(len(node.inodes))
+	dnode.Num_key_values = int32(len(node.key_values))
 	dnode.Num_children = int32(len(node.children))
 
-	for idx, inode := range node.inodes {
-		_assert(len(inode.key) < MAX_KEY_LEN)
-		_assert(len(inode.value) < MAX_VALUE_LEN)
+	for idx, key_value := range node.key_values {
+		_assert(len(key_value.key) < MAX_KEY_LEN)
+		_assert(len(key_value.value) < MAX_VALUE_LEN)
 		var dkv diskKeyValue
-		dkv.Key_len = int32(len(inode.key))
-		dkv.Value_len = int32(len(inode.value))
+		dkv.Key_len = int32(len(key_value.key))
+		dkv.Value_len = int32(len(key_value.value))
 
-		copy(dkv.Key[:dkv.Key_len], inode.key)
-		copy(dkv.Value[:dkv.Value_len], inode.value)
+		copy(dkv.Key[:dkv.Key_len], key_value.key)
+		copy(dkv.Value[:dkv.Value_len], key_value.value)
 
 		dnode.Key_values[idx] = dkv
 	}
 
-	for idx, child_disk_idx := range node.children {
-		dnode.Children[idx] = child_disk_idx
+	for idx, child_id := range node.children {
+		dnode.Children[idx] = diskNodeIndex(child_id)
 	}
 
 	return dnode
 }
+
+// ------------------------------- DiskNodeWriter -------------------------------
+
+const START_FROM_THE_BEGINNING_OF_FILE = os.SEEK_SET
 
 func (dnw *diskNodeWriter) get_node_from_idx(idx diskNodeIndex) *node_t {
 	offset := get_offset_from_idx(idx)

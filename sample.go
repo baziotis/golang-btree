@@ -1,9 +1,16 @@
 package main
 
-import "github.com/baziotis/golang-btree/btree"
+import (
+	"os"
+
+	"github.com/baziotis/golang-btree/btree"
+)
 
 func main() {
-	t := btree.GetNewBTree(1, "bt.db")
+	file := "bt.db"
+	t := btree.GetNewBTree(1, file)
+	defer os.Remove(file)
+
 	t.Insert([]byte("10"), []byte("24"))
 	t.Print()
 	t.Insert([]byte("20"), []byte("38"))

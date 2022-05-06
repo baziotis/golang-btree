@@ -16,19 +16,26 @@ func rand_bytes(n int) Bytes {
 	return b
 }
 
+// This takes some time.
 func TestBTree(t *testing.T) {
-	// Remove test .db file
 	test_db_file := "bt_test.db"
+	// Remove test .db file if it exists
 	if check_file_exists(test_db_file) {
-		err := os.Remove("bt_test.db")
+		err := os.Remove(test_db_file)
 		panic_on_err(err)
 	}
+
+	defer os.Remove(test_db_file)
+
 	// TODO: Check properties of tree, e.g., that all paths
 	// to leaves have the same length
 	for order := 1; order < 10; order++ {
-		bt := GetNewBTree(order, "bt_test.db")
+		bt := GetNewBTree(order, test_db_file)
+		_assert(bt.max_items_per_node() < MAX_KEY_VALUES)
 		num_insertions := 3 * 1000
 		key_value_len := 10
+		_assert(key_value_len < MAX_KEY_LEN)
+		_assert(key_value_len < MAX_VALUE_LEN)
 		rand.Seed(time.Now().UnixNano())
 
 		verifier := make(map[string]string, num_insertions)
@@ -39,12 +46,28 @@ func TestBTree(t *testing.T) {
 			key := rand_bytes(key_value_len)
 			value := rand_bytes(key_value_len)
 			bt.Insert(key, value)
+			// Check that it was inserted by searching for it
 			found, value_lookup := bt.Find(key)
 			if !found || !value.equal(value_lookup) {
 				t.Fatal()
 			}
+			// Make sure we got the correct value
 			verifier[string(key)] = string(value)
 			keys_saved = append(keys_saved, key)
+
+			// At every insertion, check that the invariants
+			// of the B-Tree hold
+			visited_root := false
+			bt.Traverse(func(n *node_t, tree *BTree) {
+				// Skip the root
+				if !visited_root {
+					return
+				}
+				if !check_node_invariants(n, tree) {
+					t.Fatal("Some node does not have at least min or at most max.")
+				}
+				visited_root = true
+			})
 		}
 
 		// Random lookups
@@ -72,5 +95,10 @@ func TestBTree(t *testing.T) {
 				}
 			}
 		}
+
+		// Remove the file to reset
+		_assert(check_file_exists(test_db_file))
+		err := os.Remove(test_db_file)
+		panic_on_err(err)
 	}
 }
