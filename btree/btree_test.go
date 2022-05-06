@@ -27,8 +27,6 @@ func TestBTree(t *testing.T) {
 
 	defer os.Remove(test_db_file)
 
-	// TODO: Check properties of tree, e.g., that all paths
-	// to leaves have the same length
 	for order := 1; order < 10; order++ {
 		bt := GetNewBTree(order, test_db_file)
 		_assert(bt.max_items_per_node() < MAX_KEY_VALUES)
@@ -68,6 +66,15 @@ func TestBTree(t *testing.T) {
 				}
 				visited_root = true
 			})
+
+			// With some probability, close the file, and re-open
+			// it, to make sure that the b-tree it's persistent.
+			const prob = 0.2
+			reload_file := rand.Float32() < prob
+			if reload_file {
+				bt.Close()
+				bt = GetNewBTree(order, test_db_file)
+			}
 		}
 
 		// Random lookups
@@ -93,6 +100,15 @@ func TestBTree(t *testing.T) {
 				if !value_bt.equal(Bytes(value_map)) {
 					t.Fatal()
 				}
+			}
+
+			// With some probability, close the file, and re-open
+			// it, to make sure that the b-tree it's persistent.
+			const prob_to_reload = 0.2
+			reload_file := rand.Float32() < prob_to_reload
+			if reload_file {
+				bt.Close()
+				bt = GetNewBTree(order, test_db_file)
 			}
 		}
 
