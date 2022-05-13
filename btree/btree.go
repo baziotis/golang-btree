@@ -212,21 +212,26 @@ func pop_last[T any](sl []T) ([]T, T) {
 	return sl, last
 }
 
-func delete_at[T any](sl []T, idx int) []T {
+func delete_sorted_at[T any](sl []T, idx int) []T {
+	// If we didn't want to preserve order, we could
+	// just replace the item to-be-deleted with the last
+	// item and then shrink the slice by one.
+	// But here we have do sth better.
+
 	len_ := len(sl)
 	if len_ == 0 {
 		panic("Tried to delete from empty slice")
 	}
-	last_idx := len_ - 1
-	// Swap the last item with the one to delete
-	sl[last_idx], sl[idx] = sl[idx], sl[last_idx]
-	// Shrink the slice by one
-	// TODO: It seems that Go doesn't really have a way to shrink a slice
-	// and free the surplus memory. The closest thing is to allocate
-	// a new slice and copy the elements into it, but why complicate
-	// the code. This is Go after all...
-	sl = sl[:last_idx]
-	return sl
+	_assert(idx >= 0 && idx < len_)
+
+	new_len := len_ - 1
+	new_sl := make([]T, new_len)
+	// Declaring new_sl with: var new_sl []T
+	// and then appending the two parts is more
+	// readable but probably slower.
+	copy(new_sl[:idx], sl[:idx])
+	copy(new_sl[idx:new_len], sl[idx+1:len_])
+	return new_sl
 }
 
 func (n *taggedNode) insert_key_value_and_split_if_needed(key_value keyValue, idx int, parent_tree *BTree) (bool, keyValue, nodeUniqueTag) {
@@ -277,7 +282,7 @@ func (n *taggedNode) delete(idx_of_key int, parent_node *taggedNode, idx_in_pare
 	if n.is_leaf() {
 		is_root := (parent_node == nil)
 		if is_root || n.can_delete_one(parent_tree) {
-			n.key_values = delete_at(n.key_values, idx_of_key)
+			n.key_values = delete_sorted_at(n.key_values, idx_of_key)
 			parent_tree.overwrite_node(n)
 			return
 		}
@@ -298,6 +303,24 @@ func (n *taggedNode) delete(idx_of_key int, parent_node *taggedNode, idx_in_pare
 				// 25|28   31|x   ...
 				//
 				// Take 28, move it in place of 30, and move 30 in place of 31
+				//
+				// However, there's a sublety. If the key to delete is not the first
+				// key, then the simple replacement will be wrong. In trees of order 1
+				// the key to delete is always the first one, because there's
+				// only one if the node underflows. But consider for instance, this
+				// tree of order 2 (I've not included the empty spots):
+				//          15|30|
+				//         /  |   \
+				//        /   |    \
+				// 10|13|14  17|20   40|50|
+				//
+				// Say we delete 20. The middle node underflows, but its left sibling
+				// has enough nodes to borrow. We can move 14 in place of 15 and use
+				// 15 to have enough items in the middle node. But, we should _not_
+				// put it in place of 20. Instead, we should basically push all nodes
+				// by one forward (in this case, only 17) and put 15 first. This
+				// "putting it first" always work because the middle key in the parent
+				// is always smaller than everything in the node.
 
 				temp := left_sibling.key_values
 				temp, last := pop_last(temp)
@@ -308,7 +331,11 @@ func (n *taggedNode) delete(idx_of_key int, parent_node *taggedNode, idx_in_pare
 				// Place the new middle
 				parent_node.key_values[idx_of_middle] = last
 				// Replace the key to be deleted
-				n.key_values[idx_of_key] = middle
+				// Note: This could be done in one go with less moving
+				// around but I don't want to overcomplicate it.
+				n.key_values = delete_sorted_at(n.key_values, idx_of_key)
+				// Insert it first.
+				n.key_values = insert_at(n.key_values, 0, middle)
 
 				// Write the 3 nodes to disk
 				parent_tree.overwrite_node(left_sibling)

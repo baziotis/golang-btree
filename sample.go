@@ -46,14 +46,12 @@ func delete_and_test_its_not_there(key []byte, t *btree.BTree) {
 	print_values := false
 
 	_assert(t.Delete(key))
-	t.Print(print_values)
 	found, _ := t.Find(key)
 	_assert(!found)
 	t.Print(print_values)
 }
 
-func main() {
-	// example1()
+func deletion1() {
 	file := "bt.db"
 	t := btree.GetNewBTree(1, file)
 	defer func() {
@@ -80,4 +78,34 @@ func main() {
 	insert_and_print([]byte("15"), t)
 
 	delete_and_test_its_not_there([]byte("30"), t)
+}
+
+func deletion2() {
+	file := "bt.db"
+	t := btree.GetNewBTree(2, file)
+	defer func() {
+		t.Close()
+		os.Remove(file)
+	}()
+
+	insert_and_print([]byte("10"), t)
+	insert_and_print([]byte("20"), t)
+	insert_and_print([]byte("30"), t)
+	insert_and_print([]byte("40"), t)
+
+	delete_and_test_its_not_there([]byte("10"), t)
+
+	insert_and_print([]byte("10"), t)
+	insert_and_print([]byte("50"), t)
+	insert_and_print([]byte("13"), t)
+	insert_and_print([]byte("15"), t)
+	insert_and_print([]byte("17"), t)
+	insert_and_print([]byte("14"), t)
+
+	delete_and_test_its_not_there([]byte("20"), t)
+}
+
+func main() {
+	deletion1()
+	// deletion2()
 }
