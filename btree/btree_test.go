@@ -5,6 +5,7 @@ import (
 	"os"
 	"testing"
 	"time"
+	"fmt"
 )
 
 func rand_bytes(n int) Bytes {
@@ -28,6 +29,7 @@ func TestBTree(t *testing.T) {
 	defer os.Remove(test_db_file)
 
 	for order := 1; order < 10; order++ {
+		fmt.Println("order: ", order)
 		bt := GetNewBTree(order, test_db_file)
 		_assert(bt.max_items_per_node() < MAX_KEY_VALUES)
 		num_insertions := 3 * 1000
