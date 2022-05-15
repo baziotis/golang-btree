@@ -288,6 +288,58 @@ func (n *taggedNode) can_delete_one(parent_tree *BTree) bool {
 	return len(n.key_values) > parent_tree.min_items_per_node()
 }
 
+func borrow_from_sibling(n *taggedNode, sibling *taggedNode, where_to_pop func([]keyValue) ([]keyValue, keyValue), idx_of_middle int, idx_of_key int, where_to_insert int, parent_node *taggedNode, parent_tree *BTree) {
+	// Take a key from the sibling. If it is the left sibling, we take its last
+	// key. If it is the right, we take its first key. Make this key middle key in the parent.
+	// Put the previous middle key in the place of the key to delete.
+	// Example. Suppose we want to remove 31 below. `x` means empty.
+	//        30|33
+	//       /  |   \
+	//      /   |    \
+	// 25|28   31|x   ...
+	//
+	// Take 28, move it in place of 30, and move 30 in place of 31
+	//
+	// However, there's a sublety. If the key to delete is not the first
+	// key, then the simple replacement will be wrong. In trees of order 1
+	// the key to delete is always the first one, because there's
+	// only one if the node underflows. But consider for instance, this
+	// tree of order 2 (I've not included the empty spots):
+	//          15|30|
+	//         /  |   \
+	//        /   |    \
+	// 10|13|14  17|20   40|50|
+	//
+	// Say we delete 20. The middle node underflows, but its left sibling
+	// has enough nodes to borrow. We can move 14 in place of 15 and use
+	// 15 to have enough items in the middle node. But, we should _not_
+	// put it in place of 20. Instead, we should basically push all nodes
+	// by one forward (in this case, only 17) and put 15 first. This
+	// "putting it first" always work because the middle key in the parent
+	// is always smaller than everything in the node.
+
+	// Pop the item from the sibling
+	temp := sibling.key_values
+	temp, borrowed_kv := where_to_pop(temp)
+	sibling.key_values = temp
+
+	// Get the middle key
+	middle := parent_node.key_values[idx_of_middle]
+
+	// Place the new middle
+	parent_node.key_values[idx_of_middle] = borrowed_kv
+	// Replace the key to be deleted
+	// Note: This could be done in one go with less moving
+	// around but I don't want to overcomplicate it.
+	n.key_values = delete_at(n.key_values, idx_of_key)
+	n.key_values = insert_at(n.key_values, where_to_insert, middle)
+
+	// Write the 3 nodes to disk
+	parent_tree.overwrite_node(sibling)
+	parent_tree.overwrite_node(parent_node)
+	parent_tree.overwrite_node(n)
+}
+
 // Delete a key-value. We assume it exists in `n`. `idx_of_key` is the idx, in `n`, where we find
 // the key-value pair to delete. `idx_in_parent` is the index of `n` in `parent_node.children`.
 //
@@ -304,63 +356,19 @@ func (n *taggedNode) delete(idx_of_key int, parent_node *taggedNode, idx_in_pare
 		// First, check if left sibling won't underflow if we delete one
 		is_first_child := (idx_in_parent == 0)
 		left_sibling_exists := !is_first_child
-		borrowed_from_left := false
 		if left_sibling_exists {
 			left_sibling := parent_tree.get_node_from_tag(parent_node.children_tags[idx_in_parent-1])
 			if left_sibling.can_delete_one(parent_tree) {
-				borrowed_from_left = true
-				// Take the last key from the left, make it middle key in the parent.
-				// Put the previous middle key in the place of the key to delete.
-				// Example. Suppose we want to remove 31 below. `x` means empty.
-				//        30|33
-				//       /  |   \
-				//      /   |    \
-				// 25|28   31|x   ...
-				//
-				// Take 28, move it in place of 30, and move 30 in place of 31
-				//
-				// However, there's a sublety. If the key to delete is not the first
-				// key, then the simple replacement will be wrong. In trees of order 1
-				// the key to delete is always the first one, because there's
-				// only one if the node underflows. But consider for instance, this
-				// tree of order 2 (I've not included the empty spots):
-				//          15|30|
-				//         /  |   \
-				//        /   |    \
-				// 10|13|14  17|20   40|50|
-				//
-				// Say we delete 20. The middle node underflows, but its left sibling
-				// has enough nodes to borrow. We can move 14 in place of 15 and use
-				// 15 to have enough items in the middle node. But, we should _not_
-				// put it in place of 20. Instead, we should basically push all nodes
-				// by one forward (in this case, only 17) and put 15 first. This
-				// "putting it first" always work because the middle key in the parent
-				// is always smaller than everything in the node.
-
-				temp := left_sibling.key_values
-				temp, last := pop_last(temp)
-				left_sibling.key_values = temp
 				// Note the -1. This is because this is not the first child.
 				idx_of_middle := idx_in_parent - 1
-				middle := parent_node.key_values[idx_of_middle]
-				// Place the new middle
-				parent_node.key_values[idx_of_middle] = last
-				// Replace the key to be deleted
-				// Note: This could be done in one go with less moving
-				// around but I don't want to overcomplicate it.
-				n.key_values = delete_at(n.key_values, idx_of_key)
-				// Insert it first.
-				n.key_values = insert_at(n.key_values, 0, middle)
+				where_to_insert := 0 // i.e., first
+				borrow_from_sibling(n, left_sibling, pop_last[keyValue],
+					idx_of_middle, idx_of_key,
+					where_to_insert, parent_node,
+					parent_tree)
 
-				// Write the 3 nodes to disk
-				parent_tree.overwrite_node(left_sibling)
-				parent_tree.overwrite_node(parent_node)
-				parent_tree.overwrite_node(n)
+				return
 			}
-		}
-
-		if borrowed_from_left {
-			return
 		}
 
 		// Otherwise, try to borrow from the right sibling, if it exists.
@@ -369,12 +377,9 @@ func (n *taggedNode) delete(idx_of_key int, parent_node *taggedNode, idx_in_pare
 		if right_sibling_exists {
 			right_sibling := parent_tree.get_node_from_tag(parent_node.children_tags[idx_in_parent+1])
 			if right_sibling.can_delete_one(parent_tree) {
-				// Similar to the left sibling
+				// Similar to the left sibling; a little weirder
+				// in finding the idx of the middle key.
 
-
-				temp := right_sibling.key_values
-				temp, first := pop_first(temp)
-				right_sibling.key_values = temp
 				// Dealing with children being one more than items.
 				idx_of_middle := -1
 				if is_first_child {
@@ -382,18 +387,13 @@ func (n *taggedNode) delete(idx_of_key int, parent_node *taggedNode, idx_in_pare
 				} else {
 					idx_of_middle = idx_in_parent
 				}
-				middle := parent_node.key_values[idx_of_middle]
-				// Place the new middle
-				parent_node.key_values[idx_of_middle] = first
-				// Replace the key to be deleted
-				n.key_values = delete_at(n.key_values, idx_of_key)
-				// Insert it last.
-				n.key_values = insert_at(n.key_values, len(n.key_values), middle)
+				where_to_insert := len(n.key_values) // i.e., last
+				borrow_from_sibling(n, right_sibling, pop_first[keyValue],
+					idx_of_middle, idx_of_key,
+					where_to_insert, parent_node,
+					parent_tree)
 
-				// Write the 3 nodes to disk
-				parent_tree.overwrite_node(right_sibling)
-				parent_tree.overwrite_node(parent_node)
-				parent_tree.overwrite_node(n)
+				return
 			}
 		}
 	} else {
