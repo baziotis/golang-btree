@@ -212,7 +212,7 @@ func pop_at[T any](sl []T, idx int) ([]T, T) {
 		panic("Tried to delete from empty slice")
 	}
 	_assert(idx >= 0 && idx < len_)
-	
+
 	// Save the item to return it
 	item := sl[idx]
 
@@ -232,7 +232,7 @@ func pop_last[T any](sl []T) ([]T, T) {
 	if len_ == 0 {
 		panic("Tried to pop last of empty slice")
 	}
-	return pop_at(sl, len_ - 1)
+	return pop_at(sl, len_-1)
 }
 
 func pop_first[T any](sl []T) ([]T, T) {
@@ -243,7 +243,7 @@ func pop_first[T any](sl []T) ([]T, T) {
 	return pop_at(sl, 0)
 }
 
-func delete_at[T any](sl []T, idx int) ([]T) {
+func delete_at[T any](sl []T, idx int) []T {
 	sl, _ = pop_at(sl, idx)
 	return sl
 }
