@@ -80,7 +80,7 @@ func deletion1() {
 	delete_and_test_its_not_there([]byte("30"), t)
 }
 
-func deletion2() {
+func borrow_from_left() {
 	file := "bt.db"
 	t := btree.GetNewBTree(2, file)
 	defer func() {
@@ -105,7 +105,37 @@ func deletion2() {
 	delete_and_test_its_not_there([]byte("20"), t)
 }
 
+func borrow_from_right() {
+	file := "bt.db"
+	t := btree.GetNewBTree(2, file)
+	defer func() {
+		t.Close()
+		os.Remove(file)
+	}()
+
+	insert_and_print([]byte("10"), t)
+	insert_and_print([]byte("20"), t)
+	insert_and_print([]byte("30"), t)
+	insert_and_print([]byte("40"), t)
+
+	delete_and_test_its_not_there([]byte("10"), t)
+
+	insert_and_print([]byte("10"), t)
+	insert_and_print([]byte("50"), t)
+	insert_and_print([]byte("13"), t)
+	insert_and_print([]byte("15"), t)
+	insert_and_print([]byte("17"), t)
+	insert_and_print([]byte("18"), t)
+
+	delete_and_test_its_not_there([]byte("10"), t)
+
+	insert_and_print([]byte("45"), t)
+
+	delete_and_test_its_not_there([]byte("18"), t)
+}
+
 func main() {
-	deletion1()
-	// deletion2()
+	// deletion1()
+	// borrow_from_left()
+	borrow_from_right()
 }

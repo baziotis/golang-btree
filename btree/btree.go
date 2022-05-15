@@ -200,29 +200,21 @@ func insert_at[T any](sl []T, idx int, item T) []T {
 	return sl
 }
 
-func pop_last[T any](sl []T) ([]T, T) {
-	len_ := len(sl)
-	if len_ == 0 {
-		panic("Tried to pop last of empty slice")
-	}
-	_assert(len_ > 0)
-	last_idx := len_ - 1
-	last := sl[last_idx]
-	sl = sl[:last_idx]
-	return sl, last
-}
-
-func delete_sorted_at[T any](sl []T, idx int) []T {
+// It preserves order, i.e., it does _not_ treat
+// the slice as a set.
+func pop_at[T any](sl []T, idx int) ([]T, T) {
 	// If we didn't want to preserve order, we could
 	// just replace the item to-be-deleted with the last
 	// item and then shrink the slice by one.
-	// But here we have do sth better.
-
+	// But we have do sth better.
 	len_ := len(sl)
 	if len_ == 0 {
 		panic("Tried to delete from empty slice")
 	}
 	_assert(idx >= 0 && idx < len_)
+	
+	// Save the item to return it
+	item := sl[idx]
 
 	new_len := len_ - 1
 	new_sl := make([]T, new_len)
@@ -231,7 +223,29 @@ func delete_sorted_at[T any](sl []T, idx int) []T {
 	// readable but probably slower.
 	copy(new_sl[:idx], sl[:idx])
 	copy(new_sl[idx:new_len], sl[idx+1:len_])
-	return new_sl
+
+	return new_sl, item
+}
+
+func pop_last[T any](sl []T) ([]T, T) {
+	len_ := len(sl)
+	if len_ == 0 {
+		panic("Tried to pop last of empty slice")
+	}
+	return pop_at(sl, len_ - 1)
+}
+
+func pop_first[T any](sl []T) ([]T, T) {
+	len_ := len(sl)
+	if len_ == 0 {
+		panic("Tried to pop last of empty slice")
+	}
+	return pop_at(sl, 0)
+}
+
+func delete_at[T any](sl []T, idx int) ([]T) {
+	sl, _ = pop_at(sl, idx)
+	return sl
 }
 
 func (n *taggedNode) insert_key_value_and_split_if_needed(key_value keyValue, idx int, parent_tree *BTree) (bool, keyValue, nodeUniqueTag) {
@@ -282,18 +296,19 @@ func (n *taggedNode) delete(idx_of_key int, parent_node *taggedNode, idx_in_pare
 	if n.is_leaf() {
 		is_root := (parent_node == nil)
 		if is_root || n.can_delete_one(parent_tree) {
-			n.key_values = delete_sorted_at(n.key_values, idx_of_key)
+			n.key_values = delete_at(n.key_values, idx_of_key)
 			parent_tree.overwrite_node(n)
 			return
 		}
 		// Otherwise, it underflows
 		// First, check if left sibling won't underflow if we delete one
 		is_first_child := (idx_in_parent == 0)
-		// is_last_child := (idx_in_parent == parent_tree.max_children()-1)
 		left_sibling_exists := !is_first_child
+		borrowed_from_left := false
 		if left_sibling_exists {
 			left_sibling := parent_tree.get_node_from_tag(parent_node.children_tags[idx_in_parent-1])
 			if left_sibling.can_delete_one(parent_tree) {
+				borrowed_from_left = true
 				// Take the last key from the left, make it middle key in the parent.
 				// Put the previous middle key in the place of the key to delete.
 				// Example. Suppose we want to remove 31 below. `x` means empty.
@@ -333,7 +348,7 @@ func (n *taggedNode) delete(idx_of_key int, parent_node *taggedNode, idx_in_pare
 				// Replace the key to be deleted
 				// Note: This could be done in one go with less moving
 				// around but I don't want to overcomplicate it.
-				n.key_values = delete_sorted_at(n.key_values, idx_of_key)
+				n.key_values = delete_at(n.key_values, idx_of_key)
 				// Insert it first.
 				n.key_values = insert_at(n.key_values, 0, middle)
 
@@ -341,13 +356,44 @@ func (n *taggedNode) delete(idx_of_key int, parent_node *taggedNode, idx_in_pare
 				parent_tree.overwrite_node(left_sibling)
 				parent_tree.overwrite_node(parent_node)
 				parent_tree.overwrite_node(n)
-			} else {
-				// A right sibling must exist (except if it's the root, but we have
-				// checked that already). The reason is that the only way to have a node
-				// with a child is that one leaf node was split. Since it was split,
-				// it push upwards a middle key, which created two children on the parent.
-				// So, if there's no right sibling, there's at least a left.
-				_assert(false)
+			}
+		}
+
+		if borrowed_from_left {
+			return
+		}
+
+		// Otherwise, try to borrow from the right sibling, if it exists.
+		is_last_child := (idx_in_parent == parent_tree.max_children()-1)
+		right_sibling_exists := !is_last_child
+		if right_sibling_exists {
+			right_sibling := parent_tree.get_node_from_tag(parent_node.children_tags[idx_in_parent+1])
+			if right_sibling.can_delete_one(parent_tree) {
+				// Similar to the left sibling
+
+
+				temp := right_sibling.key_values
+				temp, first := pop_first(temp)
+				right_sibling.key_values = temp
+				// Dealing with children being one more than items.
+				idx_of_middle := -1
+				if is_first_child {
+					idx_of_middle = 0
+				} else {
+					idx_of_middle = idx_in_parent
+				}
+				middle := parent_node.key_values[idx_of_middle]
+				// Place the new middle
+				parent_node.key_values[idx_of_middle] = first
+				// Replace the key to be deleted
+				n.key_values = delete_at(n.key_values, idx_of_key)
+				// Insert it last.
+				n.key_values = insert_at(n.key_values, len(n.key_values), middle)
+
+				// Write the 3 nodes to disk
+				parent_tree.overwrite_node(right_sibling)
+				parent_tree.overwrite_node(parent_node)
+				parent_tree.overwrite_node(n)
 			}
 		}
 	} else {
