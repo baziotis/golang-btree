@@ -348,6 +348,51 @@ func borrow_from_sibling(n *taggedNode, sibling *taggedNode, where_to_pop func([
 	parent_tree.overwrite_node(n)
 }
 
+type borrowingFrom int
+
+const (
+	BORROWING_FROM_LEFT borrowingFrom = iota
+	BORROWING_FROM_RIGHT
+)
+
+func delete_merge(n *taggedNode, sibling *taggedNode, parent_node *taggedNode, idx_of_middle, idx_of_key, idx_in_parent int, borrowing_from borrowingFrom, parent_tree *BTree) {
+	where_to_insert_idx := tern(borrowing_from == BORROWING_FROM_LEFT, 0, len(n.key_values))
+
+	// Delete the key
+	n.key_values = delete_at(n.key_values, idx_of_key)
+	// Delete middle and insert it key as the first/last of `n`'s KVs.
+	middle := parent_node.key_values[idx_of_middle]
+	parent_node.key_values = delete_at(parent_node.key_values, idx_of_middle)
+	n.key_values = insert_at(n.key_values, where_to_insert_idx, middle)
+	if borrowing_from == BORROWING_FROM_LEFT {
+		// Append `n`'s KVs to the end of (left) sibling
+		sibling.key_values = append(sibling.key_values, n.key_values...)
+	} else {
+		// Append (right) sibling's KVs to the end of `n` and make that the new
+		// sibling.
+		sibling.key_values = append(n.key_values, sibling.key_values...)
+	}
+
+	// Remove `n` as a child of parent_node
+	parent_node.children_tags = delete_at(parent_node.children_tags, idx_in_parent)
+	// Delete `n`.
+	parent_tree.delete_node(n)
+
+	// If the parent is left with no items then we should delete the parent.
+	// Basicall, then the new node (i.e., sibling) takes its place.
+	// To do that, we just take its tag. Note: This handles the case
+	// where the parent is the root.
+	if len(parent_node.key_values) == 0 {
+		sibling.tag = parent_node.tag
+		parent_tree.delete_node(parent_node)
+		parent_tree.overwrite_node(sibling)
+	} else {
+		// Overwrite left_sibling and parent_node
+		parent_tree.overwrite_node(sibling)
+		parent_tree.overwrite_node(parent_node)
+	}
+}
+
 // Delete a key-value. We assume it exists in `n`. `idx_of_key` is the idx, in `n`, where we find
 // the key-value pair to delete. `idx_in_parent` is the index of `n` in `parent_node.children`.
 //
@@ -422,66 +467,20 @@ func (n *taggedNode) delete(idx_of_key int, parent_node *taggedNode, idx_in_pare
 		// way a parent node is created is that a node got full and was split
 		// in two.
 		if left_sibling_exists {
-			// Delete the key
-			n.key_values = delete_at(n.key_values, idx_of_key)
-			// Delete middle and insert it key as the first of `n`'s KVs.
-			middle := parent_node.key_values[idx_of_middle_left]
-			parent_node.key_values = delete_at(parent_node.key_values, idx_of_middle_left)
-			n.key_values = insert_at(n.key_values, 0, middle)
-			// Append `n`'s KVs to left_sibling
 			left_sibling := parent_tree.get_node_from_tag(parent_node.children_tags[idx_in_parent-1])
-			left_sibling.key_values = append(left_sibling.key_values, n.key_values...)
-			// Remove `n` as a child of parent_node
-			parent_node.children_tags = delete_at(parent_node.children_tags, idx_in_parent)
-			// Delete `n`.
-			parent_tree.delete_node(n)
-
-			// If the parent is left with no items then we should delete the parent.
-			// Basicall, then the new node (i.e., left_sibling) takes its place.
-			// To do that, we just take its tag. Note: This handles the case
-			// where the parent is the root.
-			if len(parent_node.key_values) == 0 {
-				left_sibling.tag = parent_node.tag
-				parent_tree.delete_node(parent_node)
-				parent_tree.overwrite_node(left_sibling)
-			} else {
-				// Overwrite left_sibling and parent_node
-				parent_tree.overwrite_node(left_sibling)
-				parent_tree.overwrite_node(parent_node)
-			}
+			delete_merge(n, left_sibling, parent_node,
+				idx_of_middle_left, idx_of_key,
+				idx_in_parent, BORROWING_FROM_LEFT, parent_tree)
 
 			return
 		}
 		// See above
 		_assert(right_sibling_exists)
 
-		// Delete the key
-		n.key_values = delete_at(n.key_values, idx_of_key)
-		// Delete middle and insert it key as the last of `n`'s KVs.
-		middle := parent_node.key_values[idx_of_middle_right]
-		parent_node.key_values = delete_at(parent_node.key_values, idx_of_middle_right)
-		n.key_values = insert_at(n.key_values, len(n.key_values), middle)
-		// Append right_sibling's KVs to `n`
 		right_sibling := parent_tree.get_node_from_tag(parent_node.children_tags[idx_in_parent+1])
-		right_sibling.key_values = append(n.key_values, right_sibling.key_values...)
-		// Remove `n` as a child of parent_node
-		parent_node.children_tags = delete_at(parent_node.children_tags, idx_in_parent)
-		// Delete `n`.
-		parent_tree.delete_node(n)
-
-		// If the parent is left with no items then we should delete the parent.
-		// Basicall, then the new node (i.e., right_sibling) takes its place.
-		// To do that, we just take its tag. Note: This handles the case
-		// where the parent is the root.
-		if len(parent_node.key_values) == 0 {
-			right_sibling.tag = parent_node.tag
-			parent_tree.delete_node(parent_node)
-			parent_tree.overwrite_node(right_sibling)
-		} else {
-			// Overwrite right_sibling and parent_node
-			parent_tree.overwrite_node(right_sibling)
-			parent_tree.overwrite_node(parent_node)
-		}
+		delete_merge(n, right_sibling, parent_node,
+			idx_of_middle_right, idx_of_key,
+			idx_in_parent, BORROWING_FROM_RIGHT, parent_tree)
 
 		return
 	} else {
