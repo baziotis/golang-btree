@@ -29,6 +29,14 @@ func tern[T any](pred bool, if_true T, if_false T) T {
 	}
 }
 
+func get_last[T any](sl []T) T {
+	len_ := len(sl)
+	if len_ == 0 {
+		panic("Tried to get the last item of empty slice")
+	}
+	return sl[len_-1]
+}
+
 func check_file_exists(path string) bool {
 	_, err := os.Stat(path)
 	// It's weird that you check it like that, but I found no better solution.
@@ -256,6 +264,16 @@ func delete_at[T any](sl []T, idx int) []T {
 	return sl
 }
 
+func delete_last[T any](sl []T, idx int) []T {
+	sl, _ = pop_last(sl)
+	return sl
+}
+
+func delete_first[T any](sl []T, idx int) []T {
+	sl, _ = pop_first(sl)
+	return sl
+}
+
 func (n *taggedNode) insert_key_value_and_split_if_needed(key_value keyValue, idx int, parent_tree *BTree) (bool, keyValue, nodeUniqueTag) {
 	empty_key_value := keyValue{}
 	n.key_values = insert_at(n.key_values, idx, key_value)
@@ -398,8 +416,8 @@ func delete_merge(n *taggedNode, sibling *taggedNode, parent_node *taggedNode, i
 //
 // Note: We could compute `idx_in_parent` on demand by searching n.tag in parent_node.children
 func (n *taggedNode) delete(idx_of_key int, parent_node *taggedNode, idx_in_parent int, parent_tree *BTree) {
+	is_root := (parent_node == nil)
 	if n.is_leaf() {
-		is_root := (parent_node == nil)
 		if is_root || n.can_delete_one(parent_tree) {
 			n.key_values = delete_at(n.key_values, idx_of_key)
 			parent_tree.overwrite_node(n)
@@ -484,7 +502,65 @@ func (n *taggedNode) delete(idx_of_key int, parent_node *taggedNode, idx_in_pare
 
 		return
 	} else {
-		_assert(false)
+		// If we can take one from the left child, then replace
+		// key with its inorder predecessor (which is the last
+		// key in the left child). Otherwise, similarly, try to get the
+		// inorder succ from the right child.
+		// Reminder: Both a left and a right children exist
+		// because the only way the key was created was because
+		// a node overflow and was split into two.
+		left_child_idx := idx_of_key
+		right_child_idx := idx_of_key + 1
+		_assert(right_child_idx < len(n.children_tags))
+		left_child := parent_tree.get_node_from_tag(n.children_tags[left_child_idx])
+		right_child := parent_tree.get_node_from_tag(n.children_tags[right_child_idx])
+		if left_child.can_delete_one(parent_tree) {
+			temp := left_child.key_values
+			temp, pred := pop_last(temp)
+			left_child.key_values = temp
+
+			n.key_values[idx_of_key] = pred
+
+			parent_tree.overwrite_node(left_child)
+			parent_tree.overwrite_node(n)
+		} else if right_child.can_delete_one(parent_tree) {
+			temp := right_child.key_values
+			temp, succ := pop_first(temp)
+			right_child.key_values = temp
+
+			n.key_values[idx_of_key] = succ
+
+			parent_tree.overwrite_node(right_child)
+			parent_tree.overwrite_node(n)
+		} else {
+			// We merge the left and right children. We can do that
+			// because both have the minimum number of items.
+
+			// Delete the key
+			temp := n.key_values
+			temp = delete_at(temp, idx_of_key)
+			n.key_values = temp
+
+			// Append all items of right to the left
+			temp = left_child.key_values
+			temp = append(temp, right_child.key_values...)
+			left_child.key_values = temp
+
+			// Delete the link to the right child and delete
+			// the right child
+			temp2 := n.children_tags
+			temp2 = delete_at(temp2, right_child_idx)
+			n.children_tags = temp2
+			parent_tree.delete_node(right_child)
+
+			// Overwrite accordingly
+			parent_tree.overwrite_node(n)
+			parent_tree.overwrite_node(left_child)
+
+			if !is_root && len(n.key_values) < parent_tree.min_items_per_node() {
+				_assert(false)
+			}
+		}
 	}
 	return
 }
