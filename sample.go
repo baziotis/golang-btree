@@ -134,8 +134,48 @@ func borrow_from_right() {
 	delete_and_test_its_not_there([]byte("18"), t)
 }
 
+func delete_with_merge() {
+	file := "bt.db"
+	t := btree.GetNewBTree(2, file)
+	defer func() {
+		t.Close()
+		os.Remove(file)
+	}()
+
+	insert_and_print([]byte("10"), t)
+	insert_and_print([]byte("20"), t)
+	insert_and_print([]byte("30"), t)
+	insert_and_print([]byte("40"), t)
+	insert_and_print([]byte("50"), t)
+
+	// Should borrow from left. It also makes
+	// the parent empty, so this should replace
+	// the parent, which is also the root.
+	delete_and_test_its_not_there([]byte("40"), t)
+
+	// Reset
+	insert_and_print([]byte("40"), t)
+
+	// Make the tree so that there are more than
+	// one items on the parent (so that it doesn't
+	// become empty when we take one)
+	insert_and_print([]byte("13"), t)
+	insert_and_print([]byte("15"), t)
+	insert_and_print([]byte("17"), t)
+
+	delete_and_test_its_not_there([]byte("17"), t)
+
+	// Reset
+	delete_and_test_its_not_there([]byte("13"), t)
+	delete_and_test_its_not_there([]byte("15"), t)
+
+	// Should borrow from right
+	delete_and_test_its_not_there([]byte("10"), t)
+}
+
 func main() {
 	// deletion1()
 	// borrow_from_left()
-	borrow_from_right()
+	// borrow_from_right()
+	delete_with_merge()
 }
