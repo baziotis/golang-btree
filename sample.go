@@ -173,6 +173,37 @@ func delete_with_merge() {
 	delete_and_test_its_not_there([]byte("10"), t)
 }
 
+func delete_with_merge2() {
+	file := "bt.db"
+	t := btree.GetNewBTree(2, file)
+	defer func() {
+		t.Close()
+		os.Remove(file)
+	}()
+
+	// Insert enough nodes to create parents that are not the
+	// root
+	insert_and_print([]byte("10"), t)
+	insert_and_print([]byte("15"), t)
+	insert_and_print([]byte("20"), t)
+	insert_and_print([]byte("25"), t)
+	insert_and_print([]byte("30"), t)
+	insert_and_print([]byte("35"), t)
+	insert_and_print([]byte("40"), t)
+	insert_and_print([]byte("45"), t)
+	insert_and_print([]byte("50"), t)
+	insert_and_print([]byte("55"), t)
+	insert_and_print([]byte("60"), t)
+	insert_and_print([]byte("65"), t)
+	insert_and_print([]byte("70"), t)
+	insert_and_print([]byte("75"), t)
+	insert_and_print([]byte("80"), t)
+	insert_and_print([]byte("85"), t)
+	insert_and_print([]byte("90"), t)
+
+	delete_and_test_its_not_there([]byte("85"), t)
+}
+
 func delete_internal() {
 	file := "bt.db"
 	t := btree.GetNewBTree(2, file)
@@ -199,7 +230,7 @@ func delete_internal() {
 	delete_and_test_its_not_there([]byte("12"), t)
 }
 
-func delete_internal2() {
+func delete_internal_merge() {
 	file := "bt.db"
 	t := btree.GetNewBTree(2, file)
 	defer func() {
@@ -225,6 +256,7 @@ func main() {
 	// borrow_from_left()
 	// borrow_from_right()
 	// delete_with_merge()
+	delete_with_merge2()
 	// delete_internal()
-	delete_internal2()
+	// delete_internal_merge()
 }

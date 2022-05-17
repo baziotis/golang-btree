@@ -376,10 +376,15 @@ const (
 func delete_merge(n *taggedNode, sibling *taggedNode, parent_node *taggedNode, idx_of_middle, idx_of_key, idx_in_parent int, borrowing_from borrowingFrom, parent_tree *BTree) {
 	where_to_insert_idx := tern(borrowing_from == BORROWING_FROM_LEFT, 0, len(n.key_values))
 
+	print_node(parent_node, parent_tree, false)
+	fmt.Println("idx_of_middle: ", idx_of_middle)
+	fmt.Println("borrowing_from: ", borrowing_from)
+
 	// Delete the key
 	n.key_values = delete_at(n.key_values, idx_of_key)
 	// Delete middle and insert it key as the first/last of `n`'s KVs.
 	middle := parent_node.key_values[idx_of_middle]
+	fmt.Println("middle: ", string(middle.key))
 	parent_node.key_values = delete_at(parent_node.key_values, idx_of_middle)
 	n.key_values = insert_at(n.key_values, where_to_insert_idx, middle)
 	if borrowing_from == BORROWING_FROM_LEFT {
@@ -391,13 +396,17 @@ func delete_merge(n *taggedNode, sibling *taggedNode, parent_node *taggedNode, i
 		sibling.key_values = append(n.key_values, sibling.key_values...)
 	}
 
+	fmt.Println("here")
+	print_node(sibling, parent_tree, false)
+	fmt.Println("there")
+
 	// Remove `n` as a child of parent_node
 	parent_node.children_tags = delete_at(parent_node.children_tags, idx_in_parent)
 	// Delete `n`.
 	parent_tree.delete_node(n)
 
 	// If the parent is left with no items then we should delete the parent.
-	// Basicall, then the new node (i.e., sibling) takes its place.
+	// Basically, then the new node (i.e., sibling) takes its place.
 	// To do that, we just take its tag. Note: This handles the case
 	// where the parent is the root.
 	if len(parent_node.key_values) == 0 {
@@ -407,6 +416,7 @@ func delete_merge(n *taggedNode, sibling *taggedNode, parent_node *taggedNode, i
 	} else {
 		// Overwrite left_sibling and parent_node
 		parent_tree.overwrite_node(sibling)
+		print_node(parent_node, parent_tree, false)
 		parent_tree.overwrite_node(parent_node)
 	}
 }
@@ -476,7 +486,7 @@ func (n *taggedNode) delete(idx_of_key int, parent_node *taggedNode, idx_in_pare
 			}
 		}
 
-		// Otherwise, merge the node with the left sibling, if it exists, otherwise
+		// Otherwise, merge `n` with the left sibling, if it exists, otherwise
 		// merge it with the right sibling. We _are_ able to do that,
 		// because to be here, both the left and the right siblings have
 		// the minimum number of keys (if they exist).
@@ -503,8 +513,7 @@ func (n *taggedNode) delete(idx_of_key int, parent_node *taggedNode, idx_in_pare
 		return
 	} else {
 		// If we can take one from the left child, then replace
-		// key with its inorder predecessor (which is the last
-		// key in the left child). Otherwise, similarly, try to get the
+		// key with its inorder predecessor. Otherwise, similarly, try to get the
 		// inorder succ from the right child.
 		// Reminder: Both a left and a right children exist
 		// because the only way the key was created was because
@@ -515,6 +524,12 @@ func (n *taggedNode) delete(idx_of_key int, parent_node *taggedNode, idx_in_pare
 		left_child := parent_tree.get_node_from_tag(n.children_tags[left_child_idx])
 		right_child := parent_tree.get_node_from_tag(n.children_tags[right_child_idx])
 		if left_child.can_delete_one(parent_tree) {
+			///
+			/// TODO: This is wrong!! For the predecessor,
+			/// we have to keep searching on the left child,
+			/// all the way to the right, until we hit a leaf
+			/// node. In other owords, the left child is not
+			/// necessarily a leaf node.
 			temp := left_child.key_values
 			temp, pred := pop_last(temp)
 			left_child.key_values = temp
