@@ -12,12 +12,9 @@ func _assert(cond bool) {
 	}
 }
 
-func insert_and_print(key []byte, t *btree.BTree) {
-	print_values := false
-
+func insert(key []byte, t *btree.BTree) {
 	whatever_value := []byte("24")
 	t.Insert(key, whatever_value)
-	t.Print(print_values)
 }
 
 func example1() {
@@ -28,23 +25,24 @@ func example1() {
 		os.Remove(file)
 	}()
 
-	insert_and_print([]byte("10"), t)
-	insert_and_print([]byte("20"), t)
-	insert_and_print([]byte("30"), t)
-	insert_and_print([]byte("40"), t)
-	insert_and_print([]byte("50"), t)
-	insert_and_print([]byte("60"), t)
-	insert_and_print([]byte("70"), t)
-	insert_and_print([]byte("80"), t)
-	insert_and_print([]byte("0"), t)
-	insert_and_print([]byte("05"), t)
-	insert_and_print([]byte("35"), t)
-	insert_and_print([]byte("36"), t)
+	insert([]byte("10"), t)
+	insert([]byte("20"), t)
+	insert([]byte("30"), t)
+	insert([]byte("40"), t)
+	insert([]byte("50"), t)
+	insert([]byte("60"), t)
+	insert([]byte("70"), t)
+	insert([]byte("80"), t)
+	insert([]byte("0"), t)
+	insert([]byte("05"), t)
+	insert([]byte("35"), t)
+	insert([]byte("36"), t)
 }
 
 func delete_and_test_its_not_there(key []byte, t *btree.BTree) {
 	print_values := false
 
+	t.Print(false)
 	_assert(t.Delete(key))
 	found, _ := t.Find(key)
 	_assert(!found)
@@ -59,28 +57,28 @@ func deletion1() {
 		os.Remove(file)
 	}()
 
-	insert_and_print([]byte("10"), t)
-	insert_and_print([]byte("20"), t)
+	insert([]byte("10"), t)
+	insert([]byte("20"), t)
 
 	delete_and_test_its_not_there([]byte("10"), t)
 
 	// Insert some keys to create leaves other
 	// than the root.
-	insert_and_print([]byte("10"), t)
-	insert_and_print([]byte("30"), t)
-	insert_and_print([]byte("40"), t)
+	insert([]byte("10"), t)
+	insert([]byte("30"), t)
+	insert([]byte("40"), t)
 
 	delete_and_test_its_not_there([]byte("40"), t)
 
-	insert_and_print([]byte("40"), t)
-	insert_and_print([]byte("50"), t)
-	insert_and_print([]byte("60"), t)
-	insert_and_print([]byte("15"), t)
+	insert([]byte("40"), t)
+	insert([]byte("50"), t)
+	insert([]byte("60"), t)
+	insert([]byte("15"), t)
 
 	delete_and_test_its_not_there([]byte("30"), t)
 }
 
-func borrow_from_left() {
+func transfer_from_left() {
 	file := "bt.db"
 	t := btree.GetNewBTree(2, file)
 	defer func() {
@@ -88,24 +86,20 @@ func borrow_from_left() {
 		os.Remove(file)
 	}()
 
-	insert_and_print([]byte("10"), t)
-	insert_and_print([]byte("20"), t)
-	insert_and_print([]byte("30"), t)
-	insert_and_print([]byte("40"), t)
-
-	delete_and_test_its_not_there([]byte("10"), t)
-
-	insert_and_print([]byte("10"), t)
-	insert_and_print([]byte("50"), t)
-	insert_and_print([]byte("13"), t)
-	insert_and_print([]byte("15"), t)
-	insert_and_print([]byte("17"), t)
-	insert_and_print([]byte("14"), t)
+	insert([]byte("10"), t)
+	insert([]byte("20"), t)
+	insert([]byte("30"), t)
+	insert([]byte("40"), t)
+	insert([]byte("50"), t)
+	insert([]byte("13"), t)
+	insert([]byte("15"), t)
+	insert([]byte("17"), t)
+	insert([]byte("14"), t)
 
 	delete_and_test_its_not_there([]byte("20"), t)
 }
 
-func borrow_from_right() {
+func transfer_from_right() {
 	file := "bt.db"
 	t := btree.GetNewBTree(2, file)
 	defer func() {
@@ -113,23 +107,19 @@ func borrow_from_right() {
 		os.Remove(file)
 	}()
 
-	insert_and_print([]byte("10"), t)
-	insert_and_print([]byte("20"), t)
-	insert_and_print([]byte("30"), t)
-	insert_and_print([]byte("40"), t)
+	insert([]byte("10"), t)
+	insert([]byte("20"), t)
+	insert([]byte("30"), t)
+	insert([]byte("40"), t)
+	insert([]byte("50"), t)
+	insert([]byte("13"), t)
+	insert([]byte("15"), t)
+	insert([]byte("17"), t)
+	insert([]byte("18"), t)
 
 	delete_and_test_its_not_there([]byte("10"), t)
 
-	insert_and_print([]byte("10"), t)
-	insert_and_print([]byte("50"), t)
-	insert_and_print([]byte("13"), t)
-	insert_and_print([]byte("15"), t)
-	insert_and_print([]byte("17"), t)
-	insert_and_print([]byte("18"), t)
-
-	delete_and_test_its_not_there([]byte("10"), t)
-
-	insert_and_print([]byte("45"), t)
+	insert([]byte("45"), t)
 
 	delete_and_test_its_not_there([]byte("18"), t)
 }
@@ -142,11 +132,11 @@ func delete_with_merge() {
 		os.Remove(file)
 	}()
 
-	insert_and_print([]byte("10"), t)
-	insert_and_print([]byte("20"), t)
-	insert_and_print([]byte("30"), t)
-	insert_and_print([]byte("40"), t)
-	insert_and_print([]byte("50"), t)
+	insert([]byte("10"), t)
+	insert([]byte("20"), t)
+	insert([]byte("30"), t)
+	insert([]byte("40"), t)
+	insert([]byte("50"), t)
 
 	// Should borrow from left. It also makes
 	// the parent empty, so this should replace
@@ -154,14 +144,14 @@ func delete_with_merge() {
 	delete_and_test_its_not_there([]byte("40"), t)
 
 	// Reset
-	insert_and_print([]byte("40"), t)
+	insert([]byte("40"), t)
 
 	// Make the tree so that there are more than
 	// one items on the parent (so that it doesn't
 	// become empty when we take one)
-	insert_and_print([]byte("13"), t)
-	insert_and_print([]byte("15"), t)
-	insert_and_print([]byte("17"), t)
+	insert([]byte("13"), t)
+	insert([]byte("15"), t)
+	insert([]byte("17"), t)
 
 	delete_and_test_its_not_there([]byte("17"), t)
 
@@ -181,27 +171,89 @@ func delete_with_merge2() {
 		os.Remove(file)
 	}()
 
+	// insert_and_print([]byte("10"), t)
+	// insert_and_print([]byte("11"), t)
+	// insert_and_print([]byte("12"), t)
+	// insert_and_print([]byte("13"), t)
+	// insert_and_print([]byte("14"), t)
+	// insert_and_print([]byte("15"), t)
+	// insert_and_print([]byte("16"), t)
+	// insert_and_print([]byte("17"), t)
+	// insert_and_print([]byte("18"), t)
+	// insert_and_print([]byte("19"), t)
+	// insert_and_print([]byte("20"), t)
+	// insert_and_print([]byte("21"), t)
+	// insert_and_print([]byte("22"), t)
+	// insert_and_print([]byte("23"), t)
+	// insert_and_print([]byte("24"), t)
+	// insert_and_print([]byte("25"), t)
+	// insert_and_print([]byte("26"), t)
+	// insert_and_print([]byte("27"), t)
+	// insert_and_print([]byte("28"), t)
+	// insert_and_print([]byte("29"), t)
+	// insert_and_print([]byte("30"), t)
+	// insert_and_print([]byte("31"), t)
+	// insert_and_print([]byte("32"), t)
+	// insert_and_print([]byte("33"), t)
+	// insert_and_print([]byte("34"), t)
+	// insert_and_print([]byte("35"), t)
+	// insert_and_print([]byte("36"), t)
+
 	// Insert enough nodes to create parents that are not the
 	// root
-	insert_and_print([]byte("10"), t)
-	insert_and_print([]byte("15"), t)
-	insert_and_print([]byte("20"), t)
-	insert_and_print([]byte("25"), t)
-	insert_and_print([]byte("30"), t)
-	insert_and_print([]byte("35"), t)
-	insert_and_print([]byte("40"), t)
-	insert_and_print([]byte("45"), t)
-	insert_and_print([]byte("50"), t)
-	insert_and_print([]byte("55"), t)
-	insert_and_print([]byte("60"), t)
-	insert_and_print([]byte("65"), t)
-	insert_and_print([]byte("70"), t)
-	insert_and_print([]byte("75"), t)
-	insert_and_print([]byte("80"), t)
-	insert_and_print([]byte("85"), t)
-	insert_and_print([]byte("90"), t)
+	insert([]byte("10"), t)
+	insert([]byte("15"), t)
+	insert([]byte("20"), t)
+	insert([]byte("25"), t)
+	insert([]byte("30"), t)
+	insert([]byte("35"), t)
+	insert([]byte("40"), t)
+	insert([]byte("45"), t)
+	insert([]byte("50"), t)
+	insert([]byte("55"), t)
+	insert([]byte("60"), t)
+	insert([]byte("65"), t)
+	insert([]byte("70"), t)
+	insert([]byte("75"), t)
+	insert([]byte("80"), t)
+	insert([]byte("85"), t)
+	insert([]byte("90"), t)
 
 	delete_and_test_its_not_there([]byte("85"), t)
+}
+
+func transfer_from_right2() {
+	file := "bt.db"
+	t := btree.GetNewBTree(2, file)
+	defer func() {
+		t.Close()
+		os.Remove(file)
+	}()
+
+	insert([]byte("10"), t)
+	insert([]byte("15"), t)
+	insert([]byte("20"), t)
+	insert([]byte("25"), t)
+	insert([]byte("30"), t)
+	insert([]byte("35"), t)
+	insert([]byte("40"), t)
+	insert([]byte("45"), t)
+	insert([]byte("50"), t)
+	insert([]byte("55"), t)
+	insert([]byte("60"), t)
+	insert([]byte("65"), t)
+	insert([]byte("70"), t)
+	insert([]byte("75"), t)
+	insert([]byte("80"), t)
+	insert([]byte("85"), t)
+	insert([]byte("90"), t)
+	insert([]byte("91"), t)
+	insert([]byte("92"), t)
+	insert([]byte("93"), t)
+	insert([]byte("94"), t)
+	insert([]byte("95"), t)
+
+	delete_and_test_its_not_there([]byte("30"), t)
 }
 
 func delete_internal() {
@@ -212,20 +264,20 @@ func delete_internal() {
 		os.Remove(file)
 	}()
 
-	insert_and_print([]byte("10"), t)
-	insert_and_print([]byte("20"), t)
-	insert_and_print([]byte("30"), t)
-	insert_and_print([]byte("40"), t)
-	insert_and_print([]byte("50"), t)
+	insert([]byte("10"), t)
+	insert([]byte("20"), t)
+	insert([]byte("30"), t)
+	insert([]byte("40"), t)
+	insert([]byte("50"), t)
 
-	insert_and_print([]byte("11"), t)
-	insert_and_print([]byte("16"), t)
-	insert_and_print([]byte("13"), t)
-	insert_and_print([]byte("12"), t)
+	insert([]byte("11"), t)
+	insert([]byte("16"), t)
+	insert([]byte("13"), t)
+	insert([]byte("12"), t)
 
 	delete_and_test_its_not_there([]byte("13"), t)
 
-	insert_and_print([]byte("13"), t)
+	insert([]byte("13"), t)
 
 	delete_and_test_its_not_there([]byte("12"), t)
 }
@@ -238,25 +290,26 @@ func delete_internal_merge() {
 		os.Remove(file)
 	}()
 
-	insert_and_print([]byte("10"), t)
-	insert_and_print([]byte("20"), t)
-	insert_and_print([]byte("30"), t)
-	insert_and_print([]byte("40"), t)
-	insert_and_print([]byte("50"), t)
+	insert([]byte("10"), t)
+	insert([]byte("20"), t)
+	insert([]byte("30"), t)
+	insert([]byte("40"), t)
+	insert([]byte("50"), t)
 
-	insert_and_print([]byte("11"), t)
-	insert_and_print([]byte("16"), t)
-	insert_and_print([]byte("13"), t)
+	insert([]byte("11"), t)
+	insert([]byte("16"), t)
+	insert([]byte("13"), t)
 
 	delete_and_test_its_not_there([]byte("13"), t)
 }
 
 func main() {
 	// deletion1()
-	// borrow_from_left()
-	// borrow_from_right()
+	// transfer_from_left()
+	// transfer_from_right()
 	// delete_with_merge()
-	delete_with_merge2()
+	// delete_with_merge2()
+	// transfer_from_right2()
 	// delete_internal()
 	// delete_internal_merge()
 }
