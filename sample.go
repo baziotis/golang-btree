@@ -2,6 +2,7 @@ package main
 
 import (
 	"os"
+	"strconv"
 
 	"github.com/baziotis/golang-btree/btree"
 )
@@ -332,6 +333,28 @@ func delete_internal_merge2() {
 	delete_and_test_its_not_there([]byte("20"), t)
 }
 
+func delete_internal_merge3() {
+	file := "bt.db"
+	t := btree.GetNewBTree(2, file)
+	defer func() {
+		t.Close()
+		os.Remove(file)
+	}()
+
+	low := 10
+	high := 40
+
+	for i := low; i < high; i++ {
+		b := []byte(strconv.Itoa(i))
+		insert(b, t)
+	}
+
+	delete_and_test_its_not_there([]byte("10"), t)
+	delete_and_test_its_not_there([]byte("11"), t)
+	delete_and_test_its_not_there([]byte("12"), t)
+	delete_and_test_its_not_there([]byte("13"), t)
+}
+
 func main() {
 	/// TODO: This is a little bit ridiculous now because the following functions
 	/// act as tests, but they are _NOT_ automatic. You literally have
@@ -357,4 +380,5 @@ func main() {
 	delete_internal()
 	delete_internal_merge()
 	delete_internal_merge2()
+	delete_internal_merge3()
 }

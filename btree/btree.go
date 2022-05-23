@@ -678,6 +678,7 @@ func rebalance(where_deletion_happened *taggedNode, path []nodeUniqueTag, tree *
 	for i := len(path) - 1; i >= 0; i-- {
 		parent := tree.get_node_from_tag(path[i])
 		if !n.has_underflown(tree) {
+			tree.overwrite_node(n)
 			return
 		}
 		parent = underflown_node(n, parent, find_idx_in_parent_from_tag(parent, n.tag), tree)
