@@ -1,11 +1,11 @@
 package btree
 
 import (
+	"fmt"
 	"math/rand"
 	"os"
 	"testing"
 	"time"
-	"fmt"
 )
 
 func rand_bytes(n int) Bytes {
@@ -32,7 +32,7 @@ func TestBTree(t *testing.T) {
 		fmt.Println("order: ", order)
 		bt := GetNewBTree(order, test_db_file)
 		_assert(bt.max_items_per_node() < MAX_KEY_VALUES)
-		num_insertions := 3 * 1000
+		num_insertions := 3 * 500
 		key_value_len := 10
 		_assert(key_value_len < MAX_KEY_LEN)
 		_assert(key_value_len < MAX_VALUE_LEN)
@@ -111,6 +111,26 @@ func TestBTree(t *testing.T) {
 			if reload_file {
 				bt.Close()
 				bt = GetNewBTree(order, test_db_file)
+			}
+		}
+
+		// Random deletions
+		for i := 0; i < num_insertions/10; i++ {
+			// With some probability delete one key from
+			// those saved
+			const prob = 0.4
+
+			delete_key := rand.Float32() < prob
+
+			if !delete_key {
+				continue
+			}
+			key := keys_saved[rand.Intn(len(keys_saved))]
+
+			bt.Delete(key)
+			found, _ := bt.Find(key)
+			if found {
+				t.Fatal()
 			}
 		}
 

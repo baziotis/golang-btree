@@ -600,26 +600,18 @@ func (n *taggedNode) delete(key Bytes, parent_node *taggedNode, idx_in_parent in
 				return true, false
 			}
 
-			// Otherwise, we have to merge.
-			// `n` acts as the parent node of left_child and right_child
-			should_delete_key = shouldDeleteKey{false, -1}
-			should_merge_middle := false
-			replaced_parent := merge(right_child, left_child, n,
-				idx_of_key, right_child_idx, should_delete_key, should_merge_middle,
-				LEFT_SIBLING, parent_tree)
+			// NOTE: Here, we're kind of f*cked. We can't just merge,
+			// unless the nodes of the predecessor and successor keys
+			// are the left and right children, respectively.
+			// I'm not really how to solve this particular case, but the
+			// problem seems to be deeper in general. In hindsight,
+			// it seems that Wikipedia's approach to B-Tree deletion
+			// is better. That is, you always just delete from a leaf
+			// node (either because the key was on a leaf node, or if it
+			// was in an internal node, then you delete the pred/succ),
+			// without thinking about underflow. Then, you have a _separate_
+			// procedure that handles rebalancing.
 
-			// Underflowed
-			if !replaced_parent && !is_root && len(n.key_values) < parent_tree.min_items_per_node() {
-				took_one_from_parent := handle_underflow(n, parent_node, left_sibling,
-					right_sibling, left_sibling_exists,
-					right_sibling_exists, should_delete_key, idx_of_middle_left,
-					idx_of_middle_right, idx_in_parent, parent_tree)
-
-				parent_tree.overwrite_node(n)
-
-				return true, took_one_from_parent
-			}
-			parent_tree.overwrite_node(n)
 			return true, false
 		}
 	}
