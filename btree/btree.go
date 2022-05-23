@@ -389,16 +389,18 @@ func transfer_from_sibling(n *taggedNode, sibling *taggedNode, transferring_from
 	parent_tree.overwrite_node(n)
 }
 
-func merge(n *taggedNode, sibling *taggedNode, parent_node *taggedNode, idx_of_middle, idx_in_parent int, should_delete_key shouldDeleteKey, transferring_from whichSibling, parent_tree *BTree) /*replaced_parent*/ bool {
+func merge(n *taggedNode, sibling *taggedNode, parent_node *taggedNode, idx_of_middle, idx_in_parent int, should_delete_key shouldDeleteKey, should_merge_middle bool, transferring_from whichSibling, parent_tree *BTree) /*replaced_parent*/ bool {
 	where_to_insert_idx := tern(transferring_from == LEFT_SIBLING, 0, len(n.key_values))
 
 	if should_delete_key.should_delete {
 		n.key_values = delete_at(n.key_values, should_delete_key.idx_of_key)
 	}
-	// Get middle and insert it key as the first/last of `n`'s KVs.
-	middle := parent_node.key_values[idx_of_middle]
+	if should_merge_middle {
+		// Get middle and insert it key as the first/last of `n`'s KVs.
+		middle := parent_node.key_values[idx_of_middle]
+		n.key_values = insert_at(n.key_values, where_to_insert_idx, middle)
+	}
 	parent_node.key_values = delete_at(parent_node.key_values, idx_of_middle)
-	n.key_values = insert_at(n.key_values, where_to_insert_idx, middle)
 	if transferring_from == LEFT_SIBLING {
 		// Append `n`'s items to the end of (left) sibling
 		sibling.key_values = append(sibling.key_values, n.key_values...)
@@ -426,14 +428,13 @@ func merge(n *taggedNode, sibling *taggedNode, parent_node *taggedNode, idx_of_m
 		parent_tree.overwrite_node(sibling)
 		return true
 	}
-	// Overwrite left_sibling and parent_node
+	// Overwrite left_sibling
 	parent_tree.overwrite_node(sibling)
 	return false
 }
 
 // Return true if we took one from parent
-func handle_underflow(n, parent_node, left_sibling, right_sibling *taggedNode, left_sibling_exists, right_sibling_exists, should_transfer_child bool, should_delete_key shouldDeleteKey, idx_of_middle_left, idx_of_middle_right, idx_in_parent int, parent_tree *BTree) bool {
-	// Set safe return values
+func handle_underflow(n, parent_node, left_sibling, right_sibling *taggedNode, left_sibling_exists, right_sibling_exists bool, should_delete_key shouldDeleteKey, idx_of_middle_left, idx_of_middle_right, idx_in_parent int, parent_tree *BTree) bool {
 
 	if left_sibling_exists && left_sibling.can_delete_one(parent_tree) {
 		should_transfer_child := false
@@ -462,10 +463,11 @@ func handle_underflow(n, parent_node, left_sibling, right_sibling *taggedNode, l
 	// if this is the root but we have checked that), because the only
 	// way a parent node is created is that a node got full and was split
 	// in two (and we preserve this property when deleting)
+	should_merge_middle := true
 	if left_sibling_exists {
 		replaced_parent := merge(n, left_sibling, parent_node,
 			idx_of_middle_left,
-			idx_in_parent, should_delete_key,
+			idx_in_parent, should_delete_key, should_merge_middle,
 			LEFT_SIBLING, parent_tree)
 
 		return !replaced_parent
@@ -475,7 +477,7 @@ func handle_underflow(n, parent_node, left_sibling, right_sibling *taggedNode, l
 
 	replaced_parent := merge(n, right_sibling, parent_node,
 		idx_of_middle_right,
-		idx_in_parent, should_delete_key,
+		idx_in_parent, should_delete_key, should_merge_middle,
 		RIGHT_SIBLING, parent_tree)
 
 	return !replaced_parent
@@ -539,17 +541,86 @@ func (n *taggedNode) delete(key Bytes, parent_node *taggedNode, idx_in_parent in
 	idx_of_middle_right := tern(is_first_child, 0, idx_in_parent)
 
 	if found {
-		should_transfer_child := false
 		should_delete_key := shouldDeleteKey{true, idx_of_key}
 		if n.is_leaf() {
 			took_one_from_parent := handle_underflow(n, parent_node, left_sibling,
 				right_sibling, left_sibling_exists, right_sibling_exists,
-				should_transfer_child, should_delete_key, idx_of_middle_left,
+				should_delete_key, idx_of_middle_left,
 				idx_of_middle_right, idx_in_parent, parent_tree)
 
 			return true, took_one_from_parent
 		} else { // It is internal
-			_assert(false)
+			// Try to replace the KV with its predecessor, if we can remove
+			// one from the descendant that has the predecessor. If not,
+			// try the same thing for the successor.
+			// Reminder: Both a left and a right children exist
+			// because the only way the key was created was because
+			// a node overflow and was split into two.
+
+			left_child_idx := idx_of_key
+			right_child_idx := idx_of_key + 1
+			_assert(right_child_idx < len(n.children_tags))
+			left_child := parent_tree.get_node_from_tag(n.children_tags[left_child_idx])
+
+			// First, find the predecessor. Go to the left child, and then
+			// all the way right.
+			runner := left_child
+			for !runner.is_leaf() {
+				runner = parent_tree.get_node_from_tag(get_last(runner.children_tags))
+			}
+			if runner.can_delete_one(parent_tree) {
+				temp := runner.key_values
+				temp, pred := pop_last(temp)
+				runner.key_values = temp
+
+				n.key_values[idx_of_key] = pred
+
+				parent_tree.overwrite_node(runner)
+				parent_tree.overwrite_node(n)
+				return true, false
+			}
+			// Try the successor. Go to the right child, and then
+			// all the way left.
+
+			right_child := parent_tree.get_node_from_tag(n.children_tags[right_child_idx])
+			runner = right_child
+			for !runner.is_leaf() {
+				runner = parent_tree.get_node_from_tag(runner.children_tags[0])
+			}
+
+			if runner.can_delete_one(parent_tree) {
+				temp := runner.key_values
+				temp, succ := pop_first(temp)
+				runner.key_values = temp
+
+				n.key_values[idx_of_key] = succ
+
+				parent_tree.overwrite_node(runner)
+				parent_tree.overwrite_node(n)
+				return true, false
+			}
+
+			// Otherwise, we have to merge.
+			// `n` acts as the parent node of left_child and right_child
+			should_delete_key = shouldDeleteKey{false, -1}
+			should_merge_middle := false
+			replaced_parent := merge(right_child, left_child, n,
+				idx_of_key, right_child_idx, should_delete_key, should_merge_middle,
+				LEFT_SIBLING, parent_tree)
+
+			// Underflowed
+			if !replaced_parent && !is_root && len(n.key_values) < parent_tree.min_items_per_node() {
+				took_one_from_parent := handle_underflow(n, parent_node, left_sibling,
+					right_sibling, left_sibling_exists,
+					right_sibling_exists, should_delete_key, idx_of_middle_left,
+					idx_of_middle_right, idx_in_parent, parent_tree)
+
+				parent_tree.overwrite_node(n)
+
+				return true, took_one_from_parent
+			}
+			parent_tree.overwrite_node(n)
+			return true, false
 		}
 	}
 
@@ -569,12 +640,11 @@ func (n *taggedNode) delete(key Bytes, parent_node *taggedNode, idx_in_parent in
 			return found_in_child, false
 		}
 
-		should_transfer_child := true
 		should_delete_key := shouldDeleteKey{false, -1}
 
 		took_one_from_parent := handle_underflow(n, parent_node, left_sibling,
 			right_sibling, left_sibling_exists,
-			right_sibling_exists, should_transfer_child, should_delete_key, idx_of_middle_left,
+			right_sibling_exists, should_delete_key, idx_of_middle_left,
 			idx_of_middle_right, idx_in_parent, parent_tree)
 
 		parent_tree.overwrite_node(n)

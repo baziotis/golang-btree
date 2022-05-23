@@ -42,7 +42,7 @@ func example1() {
 func delete_and_test_its_not_there(key []byte, t *btree.BTree) {
 	print_values := false
 
-	t.Print(false)
+	t.Print(print_values)
 	_assert(t.Delete(key))
 	found, _ := t.Find(key)
 	_assert(!found)
@@ -303,6 +303,35 @@ func delete_internal_merge() {
 	delete_and_test_its_not_there([]byte("13"), t)
 }
 
+func delete_internal_merge2() {
+	file := "bt.db"
+	t := btree.GetNewBTree(2, file)
+	defer func() {
+		t.Close()
+		os.Remove(file)
+	}()
+
+	insert([]byte("10"), t)
+	insert([]byte("15"), t)
+	insert([]byte("20"), t)
+	insert([]byte("25"), t)
+	insert([]byte("30"), t)
+	insert([]byte("35"), t)
+	insert([]byte("40"), t)
+	insert([]byte("45"), t)
+	insert([]byte("50"), t)
+	insert([]byte("55"), t)
+	insert([]byte("60"), t)
+	insert([]byte("65"), t)
+	insert([]byte("70"), t)
+	insert([]byte("75"), t)
+	insert([]byte("80"), t)
+	insert([]byte("85"), t)
+	insert([]byte("90"), t)
+
+	delete_and_test_its_not_there([]byte("20"), t)
+}
+
 func main() {
 	/// TODO: This is a little bit ridiculous now because the following functions
 	/// act as tests, but they are _NOT_ automatic. You literally have
@@ -327,4 +356,5 @@ func main() {
 	// transfer_from_right2()
 	// delete_internal()
 	// delete_internal_merge()
+	// delete_internal_merge2()
 }
