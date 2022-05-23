@@ -304,6 +304,21 @@ func delete_internal_merge() {
 }
 
 func main() {
+	/// TODO: This is a little bit ridiculous now because the following functions
+	/// act as tests, but they are _NOT_ automatic. You literally have
+	/// to check manually that the trees changed as they are supposed
+	/// to. Again, this is bad but I was bored of making a good solution.
+	/// But here are some ideas:
+	/// - The best alternative is to create a format, and parser, for a B-Tree.
+	///   So, you write a B-Tree and parse it into an in-memory B-Tree. Then,
+	///   you do a change into a B-Tree and you also provide what should be the
+	///   the correct B-Tree. The one you're testing is already in-memory.
+	///   The correct one is parsed into memory and they must be the same.
+	///   Besides providing automation, the important thing in this solution
+	///   is that you can _see_ the correct tree.
+	/// - A more lazy approach is just create the equality checker (very simple).
+	///   Then, you create the correct B-Tree by doing insertions accordingly.
+
 	// deletion1()
 	// transfer_from_left()
 	// transfer_from_right()
