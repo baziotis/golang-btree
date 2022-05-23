@@ -44,9 +44,9 @@ func delete_and_test_its_not_there(key []byte, t *btree.BTree) {
 
 	t.Print(print_values)
 	_assert(t.Delete(key))
+	t.Print(print_values)
 	found, _ := t.Find(key)
 	_assert(!found)
-	t.Print(print_values)
 }
 
 func deletion1() {
@@ -348,13 +348,13 @@ func main() {
 	/// - A more lazy approach is just create the equality checker (very simple).
 	///   Then, you create the correct B-Tree by doing insertions accordingly.
 
-	// deletion1()
-	// transfer_from_left()
-	// transfer_from_right()
-	// delete_with_merge()
-	// delete_with_merge2()
-	// transfer_from_right2()
-	// delete_internal()
-	// delete_internal_merge()
-	// delete_internal_merge2()
+	deletion1()
+	transfer_from_left()
+	transfer_from_right()
+	delete_with_merge()
+	delete_with_merge2()
+	transfer_from_right2()
+	delete_internal()
+	delete_internal_merge()
+	delete_internal_merge2()
 }

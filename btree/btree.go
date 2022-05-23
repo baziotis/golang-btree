@@ -326,41 +326,13 @@ type shouldDeleteKey struct {
 	idx_of_key    int
 }
 
-func transfer_from_sibling(n *taggedNode, sibling *taggedNode, transferring_from whichSibling, parent_node *taggedNode, idx_of_middle int, should_delete_key shouldDeleteKey, should_transfer_child bool, parent_tree *BTree) {
+func transfer_from_sibling(n *taggedNode, sibling *taggedNode, transferring_from whichSibling, parent_node *taggedNode, idx_of_middle int, parent_tree *BTree) (new_parent *taggedNode) {
 	where_to_insert_kv := tern(transferring_from == LEFT_SIBLING, 0, len(n.key_values))
 	where_to_insert_child := tern(transferring_from == LEFT_SIBLING, 0, len(n.children_tags))
 	pop_kv := tern(transferring_from == LEFT_SIBLING, pop_last[keyValue], pop_first[keyValue])
 	pop_child := tern(transferring_from == LEFT_SIBLING, pop_last[nodeUniqueTag], pop_first[nodeUniqueTag])
-	// Take a key from the sibling. If it is the left sibling, we take its last
-	// key. If it is the right, we take its first key. Make this key middle key in the parent.
-	// Put the previous middle key in the place of the key to delete.
-	// Example. Suppose we want to remove 31 below. `x` means empty.
-	//        30|33
-	//       /  |   \
-	//      /   |    \
-	// 25|28   31|x   ...
-	//
-	// Take 28, move it in place of 30, and move 30 in place of 31
-	//
-	// However, there's a sublety. If the key to delete is not the first
-	// key, then the simple replacement will be wrong. In trees of order 1
-	// the key to delete is always the first one, because there's
-	// only one if the node underflows. But consider for instance, this
-	// tree of order 2 (I've not included the empty spots):
-	//          15|30|
-	//         /  |   \
-	//        /   |    \
-	// 10|13|14  17|20   40|50|
-	//
-	// Say we delete 20. The middle node underflows, but its left sibling
-	// has enough nodes to borrow. We can move 14 in place of 15 and use
-	// 15 to have enough items in the middle node. But, we should _not_
-	// put it in place of 20. Instead, we should basically push all nodes
-	// by one forward (in this case, only 17) and put 15 first. This
-	// "putting it first" always work because the middle key in the parent
-	// is always smaller than everything in the node.
 
-	// Pop the item from the sibling
+	// Pop KV from the sibling
 	temp := sibling.key_values
 	temp, borrowed_kv := pop_kv(temp)
 	sibling.key_values = temp
@@ -370,36 +342,30 @@ func transfer_from_sibling(n *taggedNode, sibling *taggedNode, transferring_from
 
 	// Place the new middle
 	parent_node.key_values[idx_of_middle] = borrowed_kv
-	// Replace the key to be deleted
-	// Note: This could be done in one go with less moving
-	// around but I don't want to overcomplicate it.
-	if should_delete_key.should_delete {
-		n.key_values = delete_at(n.key_values, should_delete_key.idx_of_key)
-	} else {
+
+	// Transfer KV
+	n.key_values = insert_at(n.key_values, where_to_insert_kv, middle)
+
+	if !n.is_leaf() {
+		// Pop child
 		temp2 := sibling.children_tags
 		temp2, sibling_child := pop_child(temp2)
 		sibling.children_tags = temp2
 		n.children_tags = insert_at(n.children_tags, where_to_insert_child, sibling_child)
 	}
-	n.key_values = insert_at(n.key_values, where_to_insert_kv, middle)
 
-	// Write the 3 nodes to disk
+	// Write the 2 nodes to disk and return the new parent
 	parent_tree.overwrite_node(sibling)
-	parent_tree.overwrite_node(parent_node)
 	parent_tree.overwrite_node(n)
+	return parent_node
 }
 
-func merge(n *taggedNode, sibling *taggedNode, parent_node *taggedNode, idx_of_middle, idx_in_parent int, should_delete_key shouldDeleteKey, should_merge_middle bool, transferring_from whichSibling, parent_tree *BTree) /*replaced_parent*/ bool {
+func merge(n *taggedNode, sibling *taggedNode, parent_node *taggedNode, idx_of_middle, idx_in_parent int, transferring_from whichSibling, parent_tree *BTree) (new_parent *taggedNode) {
 	where_to_insert_idx := tern(transferring_from == LEFT_SIBLING, 0, len(n.key_values))
 
-	if should_delete_key.should_delete {
-		n.key_values = delete_at(n.key_values, should_delete_key.idx_of_key)
-	}
-	if should_merge_middle {
-		// Get middle and insert it key as the first/last of `n`'s KVs.
-		middle := parent_node.key_values[idx_of_middle]
-		n.key_values = insert_at(n.key_values, where_to_insert_idx, middle)
-	}
+	// Get middle and insert it key as the first/last of `n`'s KVs.
+	middle := parent_node.key_values[idx_of_middle]
+	n.key_values = insert_at(n.key_values, where_to_insert_idx, middle)
 	parent_node.key_values = delete_at(parent_node.key_values, idx_of_middle)
 	if transferring_from == LEFT_SIBLING {
 		// Append `n`'s items to the end of (left) sibling
@@ -425,225 +391,72 @@ func merge(n *taggedNode, sibling *taggedNode, parent_node *taggedNode, idx_of_m
 	if len(parent_node.key_values) == 0 {
 		sibling.tag = parent_node.tag
 		parent_tree.delete_node(parent_node)
-		parent_tree.overwrite_node(sibling)
-		return true
+		return sibling
 	}
 	// Overwrite left_sibling
 	parent_tree.overwrite_node(sibling)
-	return false
+	return parent_node
 }
 
-// Return true if we took one from parent
-func handle_underflow(n, parent_node, left_sibling, right_sibling *taggedNode, left_sibling_exists, right_sibling_exists bool, should_delete_key shouldDeleteKey, idx_of_middle_left, idx_of_middle_right, idx_in_parent int, parent_tree *BTree) bool {
-
-	if left_sibling_exists && left_sibling.can_delete_one(parent_tree) {
-		should_transfer_child := false
-		transfer_from_sibling(n, left_sibling, LEFT_SIBLING, parent_node,
-			idx_of_middle_left, should_delete_key, should_transfer_child,
-			parent_tree)
-
-		return false
-	}
-
-	// Otherwise, try to borrow from the right sibling, if it exists.
-	if right_sibling_exists && right_sibling.can_delete_one(parent_tree) {
-		should_transfer_child := false
-		transfer_from_sibling(n, right_sibling, RIGHT_SIBLING, parent_node,
-			idx_of_middle_right, should_delete_key, should_transfer_child,
-			parent_tree)
-
-		return false
-	}
-
-	// Otherwise, merge `n` with the left sibling, if it exists, otherwise
-	// merge it with the right sibling. We _are_ able to do that,
-	// because to be here, both the left and the right siblings have
-	// the minimum number of keys (if they exist).
-	// Reminder: Either a left or a right sibling _must_ exist (except
-	// if this is the root but we have checked that), because the only
-	// way a parent node is created is that a node got full and was split
-	// in two (and we preserve this property when deleting)
-	should_merge_middle := true
-	if left_sibling_exists {
-		replaced_parent := merge(n, left_sibling, parent_node,
-			idx_of_middle_left,
-			idx_in_parent, should_delete_key, should_merge_middle,
-			LEFT_SIBLING, parent_tree)
-
-		return !replaced_parent
-	}
-	// See above
-	_assert(right_sibling_exists)
-
-	replaced_parent := merge(n, right_sibling, parent_node,
-		idx_of_middle_right,
-		idx_in_parent, should_delete_key, should_merge_middle,
-		RIGHT_SIBLING, parent_tree)
-
-	return !replaced_parent
-}
-
-// TODO: Not sure that you need the recursion stack.
-// It seems that if because of merging, the parent
-// has less than min, you can start going up at this
-// point with a loop, and you don't need to keep
-// state.
-
-// Delete a key-value. We assume it exists in `n`. `idx_of_key` is the idx, in `n`, where we find
-// the key-value pair to delete. `idx_in_parent` is the index of `n` in `parent_node.children`.
-//
-// Note: We could compute `idx_in_parent` on demand by searching n.tag in parent_node.children
-func (n *taggedNode) delete(key Bytes, parent_node *taggedNode, idx_in_parent int, parent_tree *BTree) (found bool, used_one_from_parent bool) {
-	used_one_from_parent = false
-	found, idx_of_key := n.key_values.find(key)
-	is_root := (parent_node == nil)
-
-	// Specialize the easy case
-	if found && n.is_leaf() && (is_root || n.can_delete_one(parent_tree)) {
-		n.key_values = delete_at(n.key_values, idx_of_key)
-		parent_tree.overwrite_node(n)
-		return
-	}
-
-	is_first_child := false
-	is_last_child := false
-	if is_root {
-		is_first_child = true
-		is_last_child = true
-	} else {
-		is_first_child = (idx_in_parent == 0)
-		is_last_child = (idx_in_parent == int(len(parent_node.children_tags))-1)
-	}
-	right_sibling_exists := !is_last_child
-	left_sibling_exists := !is_first_child
-
-	var left_sibling *taggedNode = nil
-	var right_sibling *taggedNode = nil
-	if left_sibling_exists {
-		left_sibling = parent_tree.get_node_from_tag(parent_node.children_tags[idx_in_parent-1])
-	}
-	if right_sibling_exists {
-		right_sibling = parent_tree.get_node_from_tag(parent_node.children_tags[idx_in_parent+1])
-	}
-
-	// Find the index of the middle key that connects
-	// us with our sibling. It's different if we're talking
-	// about the left or the right sibling. See borrow_from_sibling()
-	// to see why the middle key is useful.
-
-	//
-	// Left
-	// Note the -1. This is because this is not the first child.
-	idx_of_middle_left := idx_in_parent - 1
-	//
-	// Right
-	// Dealing with children being one more than items.
-	idx_of_middle_right := tern(is_first_child, 0, idx_in_parent)
-
-	if found {
-		should_delete_key := shouldDeleteKey{true, idx_of_key}
-		if n.is_leaf() {
-			took_one_from_parent := handle_underflow(n, parent_node, left_sibling,
-				right_sibling, left_sibling_exists, right_sibling_exists,
-				should_delete_key, idx_of_middle_left,
-				idx_of_middle_right, idx_in_parent, parent_tree)
-
-			return true, took_one_from_parent
-		} else { // It is internal
-			// Try to replace the KV with its predecessor, if we can remove
-			// one from the descendant that has the predecessor. If not,
-			// try the same thing for the successor.
-			// Reminder: Both a left and a right children exist
-			// because the only way the key was created was because
-			// a node overflow and was split into two.
-
-			left_child_idx := idx_of_key
-			right_child_idx := idx_of_key + 1
-			_assert(right_child_idx < len(n.children_tags))
-			left_child := parent_tree.get_node_from_tag(n.children_tags[left_child_idx])
-
-			// First, find the predecessor. Go to the left child, and then
-			// all the way right.
-			runner := left_child
-			for !runner.is_leaf() {
-				runner = parent_tree.get_node_from_tag(get_last(runner.children_tags))
-			}
-			if runner.can_delete_one(parent_tree) {
-				temp := runner.key_values
-				temp, pred := pop_last(temp)
-				runner.key_values = temp
-
-				n.key_values[idx_of_key] = pred
-
-				parent_tree.overwrite_node(runner)
-				parent_tree.overwrite_node(n)
-				return true, false
-			}
-			// Try the successor. Go to the right child, and then
-			// all the way left.
-
-			right_child := parent_tree.get_node_from_tag(n.children_tags[right_child_idx])
-			runner = right_child
-			for !runner.is_leaf() {
-				runner = parent_tree.get_node_from_tag(runner.children_tags[0])
-			}
-
-			if runner.can_delete_one(parent_tree) {
-				temp := runner.key_values
-				temp, succ := pop_first(temp)
-				runner.key_values = temp
-
-				n.key_values[idx_of_key] = succ
-
-				parent_tree.overwrite_node(runner)
-				parent_tree.overwrite_node(n)
-				return true, false
-			}
-
-			// NOTE: Here, we're kind of f*cked. We can't just merge,
-			// unless the nodes of the predecessor and successor keys
-			// are the left and right children, respectively.
-			// I'm not really how to solve this particular case, but the
-			// problem seems to be deeper in general. In hindsight,
-			// it seems that Wikipedia's approach to B-Tree deletion
-			// is better. That is, you always just delete from a leaf
-			// node (either because the key was on a leaf node, or if it
-			// was in an internal node, then you delete the pred/succ),
-			// without thinking about underflow. Then, you have a _separate_
-			// procedure that handles rebalancing.
-
-			return true, false
-		}
-	}
-
-	// Otherwise, recurse to the child, and check
-	// on the way up if the child used one of our
-	// items to merge.
-
+func (n *taggedNode) delete(idx_of_key int, path []nodeUniqueTag, parent_tree *BTree) (where_deletion_happened *taggedNode, new_path []nodeUniqueTag) {
 	if n.is_leaf() {
-		return false, false
+		temp := n.key_values
+		temp = delete_at(temp, idx_of_key)
+		n.key_values = temp
+		return n, path
 	}
-	child_tag := nodeUniqueTag(n.children_tags[idx_of_key])
-	child_node := parent_tree.get_node_from_tag(child_tag)
-	found_in_child, took_one := child_node.delete(key, n, idx_of_key, parent_tree)
-	if took_one {
-		if is_root || len(n.key_values) >= parent_tree.min_items_per_node() {
-			parent_tree.overwrite_node(n)
-			return found_in_child, false
-		}
+	// It's internal
+	// Try to replace the KV with its predecessor, if we can remove
+	// one from the descendant that has the predecessor. If not,
+	// try the same thing for the successor.
+	// Reminder: Both a left and a right children exist
+	// because the only way the key was created was because
+	// a node overflow and was split into two.
 
-		should_delete_key := shouldDeleteKey{false, -1}
+	left_child_idx := idx_of_key
+	right_child_idx := idx_of_key + 1
+	_assert(right_child_idx < len(n.children_tags))
+	left_child := parent_tree.get_node_from_tag(n.children_tags[left_child_idx])
 
-		took_one_from_parent := handle_underflow(n, parent_node, left_sibling,
-			right_sibling, left_sibling_exists,
-			right_sibling_exists, should_delete_key, idx_of_middle_left,
-			idx_of_middle_right, idx_in_parent, parent_tree)
-
+	// First, find the predecessor. Go to the left child, and then
+	// all the way right.
+	runner := left_child
+	for !runner.is_leaf() {
+		runner = parent_tree.get_node_from_tag(get_last(runner.children_tags))
+	}
+	if runner.can_delete_one(parent_tree) {
+		temp := runner.key_values
+		temp, pred := pop_last(temp)
+		runner.key_values = temp
+		n.key_values[idx_of_key] = pred
 		parent_tree.overwrite_node(n)
-
-		return found_in_child, took_one_from_parent
+		var dont_care []nodeUniqueTag
+		return runner, dont_care
 	}
-	return found_in_child, false
+
+	// Otherwise, just delete the succ, where it will leave the
+	// node with less than min or not, and leave the rest to
+	// rebalance()
+
+	right_child := parent_tree.get_node_from_tag(n.children_tags[right_child_idx])
+	runner = right_child
+	path = append(path, n.tag)
+	path = append(path, runner.tag)
+	for !runner.is_leaf() {
+		runner = parent_tree.get_node_from_tag(runner.children_tags[0])
+		path = append(path, runner.tag)
+	}
+	// Remove the last node, i.e., where deletion happens
+	path, _ = pop_last(path)
+
+	temp := runner.key_values
+	temp, succ := pop_first(temp)
+	runner.key_values = temp
+
+	n.key_values[idx_of_key] = succ
+	parent_tree.overwrite_node(n)
+
+	return runner, path
 }
 
 func (n *node_t) is_leaf() bool {
@@ -753,40 +566,141 @@ func (tree *BTree) Close() {
 	panic_on_err(err)
 }
 
-// If the key is found, we return the node at which the key is, the parent
-// of this node, and the  index of the key in this node.
-func (tree *BTree) find(key Bytes) (found bool, node *taggedNode, idx_of_key int, parent *taggedNode, idx_in_parent int) {
-	parent = nil
-	idx_in_parent = -1
-	runner := tree.get_root_node()
+func (tree *BTree) find_custom_start(key Bytes, start *taggedNode, save_path bool, path []nodeUniqueTag) (found bool, node *taggedNode, idx_of_key int, new_path []nodeUniqueTag) {
+	if save_path {
+		path = append(path, start.tag)
+	}
+	runner := start
 	for {
 		found, idx := runner.key_values.find(key)
 		if found {
+			if save_path {
+				// Remove last element; we only save the intermediate path
+				path, _ = pop_last(path)
+			}
 			idx_of_key = idx
-			return true, runner, idx_of_key, parent, idx_in_parent
+			return true, runner, idx_of_key, path
 		}
 		if runner.is_leaf() {
-			return false, nil, -1, nil, -1
+			return false, nil, -1, path
 		}
-		parent = runner
-		idx_in_parent = idx
 		runner = tree.get_node_from_tag(runner.children_tags[idx])
+		if save_path { // should be easy to predict
+			path = append(path, runner.tag)
+		}
 		_assert(runner != nil)
 	}
 }
 
+func (tree *BTree) find(key Bytes, save_path bool, path []nodeUniqueTag) (found bool, node *taggedNode, idx_of_key int, new_path []nodeUniqueTag) {
+	return tree.find_custom_start(key, tree.get_root_node(), save_path, path)
+}
+
 func (tree *BTree) Find(key Bytes) (found bool, value Bytes) {
-	found, node, idx_of_key, _, _ := tree.find(key)
+	var unused []nodeUniqueTag
+	found, node, idx_of_key, _ := tree.find(key, false, unused)
 	if found {
 		return true, node.key_values[idx_of_key].value
 	}
 	return false, nil
 }
 
+func (n *taggedNode) has_underflown(tree *BTree) bool {
+	return len(n.key_values) < tree.min_items_per_node()
+}
+
+func underflown_node(n *taggedNode, parent *taggedNode, idx_in_parent int, tree *BTree) (new_parent *taggedNode) {
+	is_first_child := (idx_in_parent == 0)
+	is_last_child := (idx_in_parent == int(len(parent.children_tags))-1)
+	right_sibling_exists := !is_last_child
+	left_sibling_exists := !is_first_child
+
+	var left_sibling *taggedNode = nil
+	var right_sibling *taggedNode = nil
+	if left_sibling_exists {
+		left_sibling = tree.get_node_from_tag(parent.children_tags[idx_in_parent-1])
+	}
+	if right_sibling_exists {
+		right_sibling = tree.get_node_from_tag(parent.children_tags[idx_in_parent+1])
+	}
+
+	// Note the -1. This is because this is not the first child.
+	idx_of_middle_left := idx_in_parent - 1
+	// Dealing with children being one more than items.
+	idx_of_middle_right := tern(is_first_child, 0, idx_in_parent)
+
+	// Try to get one from left_sibling
+	if left_sibling_exists && left_sibling.can_delete_one(tree) {
+		return transfer_from_sibling(n, left_sibling, LEFT_SIBLING, parent,
+			idx_of_middle_left, tree)
+	}
+
+	// Otherwise, try to borrow from the right sibling, if it exists.
+	if right_sibling_exists && right_sibling.can_delete_one(tree) {
+		return transfer_from_sibling(n, right_sibling, RIGHT_SIBLING, parent,
+			idx_of_middle_right, tree)
+	}
+
+	// Otherwise, merge `n` with the left sibling, if it exists, otherwise
+	// merge it with the right sibling. We _are_ able to do that,
+	// because to be here, both the left and the right siblings have
+	// the minimum number of keys (if they exist).
+	// Reminder: Either a left or a right sibling _must_ exist (except
+	// if this is the root but we have checked that), because the only
+	// way a parent node is created is that a node got full and was split
+	// in two (and we preserve this property when deleting)
+	if left_sibling_exists {
+		return merge(n, left_sibling, parent, idx_of_middle_left,
+			idx_in_parent, LEFT_SIBLING, tree)
+	}
+	// See above
+	_assert(right_sibling_exists)
+
+	return merge(n, right_sibling, parent,
+		idx_of_middle_right, idx_in_parent,
+		RIGHT_SIBLING, tree)
+}
+
+func rebalance(where_deletion_happened *taggedNode, path []nodeUniqueTag, tree *BTree) {
+	find_idx_in_parent_from_tag := func(par *taggedNode, tag nodeUniqueTag) int {
+		for idx, child_tag := range par.children_tags {
+			if child_tag == tag {
+				return idx
+			}
+		}
+		_assert(false)
+		return -1
+	}
+
+	// Otherwise, this is the root and this function shouldn't have been called
+	_assert(len(path) > 0)
+	n := where_deletion_happened
+	for i := len(path) - 1; i >= 0; i-- {
+		parent := tree.get_node_from_tag(path[i])
+		if !n.has_underflown(tree) {
+			return
+		}
+		parent = underflown_node(n, parent, find_idx_in_parent_from_tag(parent, n.tag), tree)
+		n = parent
+	}
+	tree.overwrite_node(n)
+}
+
 func (tree *BTree) Delete(key Bytes) (found bool) {
-	tagged_root := tree.get_root_node()
-	found, _ = tagged_root.delete(key, nil, -1, tree)
-	return found
+	var path []nodeUniqueTag
+	save_path := true
+	found, node, idx_of_key, path := tree.find(key, save_path, path)
+	if !found {
+		return false
+	}
+	leaf, path := node.delete(idx_of_key, path, tree)
+	is_root := (leaf.tag == 0)
+	if !is_root && leaf.has_underflown(tree) {
+		rebalance(leaf, path, tree)
+	} else {
+		tree.overwrite_node(leaf)
+	}
+	return true
 }
 
 var indent_level int = 0
@@ -860,9 +774,7 @@ we save them */
 
 func (tree *BTree) overwrite_node(n *taggedNode) {
 	overwriting_root := (n.tag == 0)
-	if !overwriting_root {
-		_assert(check_node_invariants(&n.node_t, tree))
-	}
+	_assert(overwriting_root || check_node_invariants(&n.node_t, tree))
 	tree.dnw.overwrite_disk_node(&n.node_t, diskNodeIndex(n.tag))
 }
 
@@ -886,7 +798,8 @@ func (tree *BTree) save_new_node(n *node_t) nodeUniqueTag {
 func (tree *BTree) get_node_from_tag(tag nodeUniqueTag) *taggedNode {
 	n := tree.dnw.get_node_from_idx(diskNodeIndex(tag))
 	tagged_node := taggedNode{*n, tag}
-	_assert(check_node_invariants(n, tree))
+	is_root := (tag == 0)
+	_assert(is_root || check_node_invariants(n, tree))
 	return &tagged_node
 }
 
